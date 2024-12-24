@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "mnist-chest-xray-classification"
+version = "0.1.0"
+description = "This project implements a deep learning solution for binary classification of chest X-rays using the ChestMNIST dataset from MedMNIST"
+authors = ["Piotr Gryko <piotr.gryko@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+medmnist = "^3.0.2"
+jupyter = "^1.1.1"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+black = "^24.10.0"
+ruff = "^0.8.4"
+pylama = "^8.4.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
