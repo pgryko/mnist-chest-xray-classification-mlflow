@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List
-
+from decouple import config 
 
 @dataclass
 class TrainingConfig:
@@ -24,9 +24,10 @@ class TrainingConfig:
 @dataclass
 class PathConfig:
     # Paths to data, logs, etc.
-    dataset_root: str = "./data"
-    checkpoint_dir: str = "./checkpoints"
-    mlflow_tracking_uri: str = "file:./mlruns"
+    dataset_root: str = config('DATASET_ROOT', default='./data')
+    checkpoint_dir: str = config('CHECKPOINT_DIR', default='./checkpoints')
+    mlflow_tracking_uri: str = config('MLFLOW_TRACKING_URI', default='file:./mlruns')
+
 
 
 # Example: how to instantiate them in code

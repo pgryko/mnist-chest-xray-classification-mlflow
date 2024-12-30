@@ -6,6 +6,24 @@ from src.training.trainer import ChestXRayTrainer
 from src.interpretability.evaluation import evaluate_model, MetricsReporter
 import mlflow
 
+import structlog
+
+# Configure structlog
+structlog.configure(
+    processors=[
+        structlog.processors.add_log_level,
+        structlog.processors.StackInfoRenderer(),
+        structlog.dev.set_exc_info,
+        structlog.processors.TimeStamper(),
+        structlog.dev.ConsoleRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
 
 def main():
     # Instantiate configs
@@ -16,7 +34,11 @@ def main():
     mlflow.set_tracking_uri(path_config.mlflow_tracking_uri)
 
     # Prepare device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+
+    # {{ edit_2 }}
+    logger.info("Using device", device=device)
+    # {{ edit_2 }}
 
     # DataModule
     data_module = ChestDataModule(train_config, path_config)
