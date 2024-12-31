@@ -1,5 +1,3 @@
-# src/data/datamodule.py
-
 import numpy as np
 from torch.utils.data import DataLoader
 import albumentations as A
@@ -13,7 +11,7 @@ class ChestXRayTransforms:
             self.transform = A.Compose(
                 [
                     A.RandomRotate90(p=0.5),
-                    A.Flip(p=0.5),
+                    A.VerticalFlip(p=0.5),
                     A.ShiftScaleRotate(
                         shift_limit=0.1,
                         scale_limit=0.1,
