@@ -1,5 +1,5 @@
 # src/training/trainer.py
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -7,7 +7,7 @@ import mlflow
 import mlflow.pytorch
 from sklearn.metrics import roc_auc_score
 import structlog
-
+from mlflow.models.signature import infer_signature
 
 from torchinfo import summary, ModelStatistics
 
@@ -142,12 +142,12 @@ class ChestXRayTrainer:
         return avg_loss, roc_auc
 
     def train_model(self):
-        mlflow.end_run()
+        # mlflow.end_run()
 
         early_stopping = EarlyStopping(patience=self.config.patience, min_delta=0.0)
         best_val_loss = float("inf")
 
-        with mlflow.start_run():
+        with mlflow.start_run(log_system_metrics=True):
             # Log initial hyperparams
             mlflow.log_params(
                 {
@@ -159,12 +159,37 @@ class ChestXRayTrainer:
                 }
             )
 
+            # Create an input example
+            sample_input = torch.randn(
+                1, 1, 64, 64
+            )  # Batch size 1, 1 channel, 64x64 image
+
+            # Generate model output for the sample input
+            self.model.eval()
+            with torch.no_grad():
+                sample_output = self.model(sample_input)
+
+            # Infer the signature from sample input and output
+            signature = infer_signature(
+                sample_input.numpy(),  # Convert to numpy for signature
+                sample_output.numpy(),  # Convert to numpy for signature
+            )
+
+            # Log the model with signature and input example
+            mlflow.pytorch.log_model(
+                self.model,
+                "model",
+                signature=signature,
+                input_example=sample_input.numpy(),
+            )
+
             for epoch in range(self.config.num_epochs):
                 train_loss, train_auc = self.train_one_epoch()
                 val_loss, val_auc = self.validate_one_epoch()
 
-                # Step the scheduler
-                self.scheduler.step(val_loss)
+                # Update learning rate
+                if self.scheduler:
+                    self.scheduler.step(val_loss)
 
                 # Log metrics to MLflow
                 mlflow.log_metrics(
@@ -188,6 +213,23 @@ class ChestXRayTrainer:
                     best_val_loss = val_loss
                     mlflow.pytorch.log_model(self.model, artifact_path="best_model")
                     early_stopping.counter = 0
+
+                    # Collect predictions from best validation epoch
+                    self.model.eval()
+                    final_targets = []
+                    final_preds = []
+                    with torch.no_grad():
+                        for data, target in self.val_loader:
+                            if data.shape[-1] != 64:
+                                data = nn.functional.interpolate(
+                                    data, size=(64, 64), mode="bilinear"
+                                )
+                            data, target = data.to(self.device), target.float().to(
+                                self.device
+                            )
+                            output = self.model(data)
+                            final_targets.extend(target.cpu().numpy())
+                            final_preds.extend(output.cpu().numpy())
                 else:
                     early_stopping(val_loss)
 
@@ -196,3 +238,4 @@ class ChestXRayTrainer:
                     break
 
         print("Training complete.")
+        return np.array(final_targets), np.array(final_preds)

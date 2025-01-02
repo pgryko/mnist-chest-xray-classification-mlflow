@@ -3,7 +3,7 @@ from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
 from src.models.chestnets import ChestNetS
 from src.training.trainer import ChestXRayTrainer
-from src.interpretability.evaluation import evaluate_model, MetricsReporter
+from src.interpretability.evaluation import MetricsReporter
 
 import structlog
 
@@ -59,14 +59,14 @@ def main():
     )
 
     # Train
-    trainer.train_model()
+    y_true, y_pred = trainer.train_model()
 
     # Evaluate on the test set
-    y_true, y_prob = evaluate_model(model, test_loader, device)
+    # y_true, y_prob = evaluate_model(model, test_loader, device)
 
     # Generate final metrics
     reporter = MetricsReporter()
-    reporter.calculate_metrics(y_true, y_prob)
+    reporter.calculate_metrics(y_true, y_pred)
     reporter.log_to_mlflow()
     print("Test ROC AUC:", reporter.metrics["roc_auc"])
 
