@@ -10,6 +10,7 @@ class ChestXRayTransforms:
         if is_training:
             self.transform = A.Compose(
                 [
+                    A.Resize(64, 64),
                     A.RandomRotate90(p=0.5),
                     A.VerticalFlip(p=0.5),
                     A.ShiftScaleRotate(
@@ -28,6 +29,7 @@ class ChestXRayTransforms:
         else:
             self.transform = A.Compose(
                 [
+                    A.Resize(64, 64),
                     A.Normalize(mean=[0.5], std=[0.5]),
                     ToTensorV2(),
                 ]
@@ -53,6 +55,7 @@ class ChestDataModule:
                 brightness=self.config.brightness,
                 contrast=self.config.contrast,
             ),
+            size=64,
         )
 
         self.val_dataset = ChestMNIST(

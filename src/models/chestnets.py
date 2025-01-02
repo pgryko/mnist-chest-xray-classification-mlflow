@@ -42,7 +42,7 @@ class ChestNetS(nn.Module):
             "initial_filters": 32,
             "max_filters": 128,
             "dropout_rate": 0.5,
-            "final_activation": "sigmoid"
+            "final_activation": "sigmoid",
         }
 
         self.features = nn.Sequential(
@@ -65,10 +65,10 @@ class ChestNetS(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
-            nn.Linear(128 * 8 * 8, 512),
+            nn.Linear(128 * 8 * 8, 512),  # This is for 64x64 input
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
-            nn.Linear(512, 1),
+            nn.Linear(512, 14),
             nn.Sigmoid(),
         )
 
@@ -80,6 +80,7 @@ class ChestNetS(nn.Module):
         Returns:
             torch.Tensor: Output predictions of shape (batch_size, 1)
         """
+
         x = self.features(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
@@ -159,8 +160,8 @@ class ChestNetM(nn.Module):
                 "conv_layers": [64, 128, 256],
                 "kernel_size": 3,
                 "padding": 1,
-                "pool_size": 2
-            }
+                "pool_size": 2,
+            },
         }
 
         self.initial = nn.Sequential(
@@ -185,7 +186,7 @@ class ChestNetM(nn.Module):
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
             nn.Dropout(0.5),
-            nn.Linear(256, 1),
+            nn.Linear(256, 14),
             nn.Sigmoid(),
         )
 
@@ -204,6 +205,7 @@ class ChestNetM(nn.Module):
         x = self.layer3(x)
         x = self.classifier(x)
         return x
+
 
 class AttentionBlock(nn.Module):
     def __init__(self, in_channels):
@@ -256,6 +258,7 @@ class ChestNetL(nn.Module):
         >>> print(output.shape)
         torch.Size([32, 1])
     """
+
     def __init__(self):
         super(ChestNetL, self).__init__()
         self.model_name = "ChestNetL"
@@ -276,14 +279,14 @@ class ChestNetL(nn.Module):
                 "padding": 1,
                 "pool_size": 2,
                 "hidden_units": [256, 128, 1],
-                "attention_reduction": 8
+                "attention_reduction": 8,
             },
             "architecture_details": {
                 "initial_conv": "64 filters, 3x3 kernel",
                 "residual_blocks": "3 blocks with increasing filters (64→128→256)",
                 "attention_mechanism": "Channel attention after each residual block",
-                "classifier": "256->128->1 with dropout layers"
-            }
+                "classifier": "256->128->1 with dropout layers",
+            },
         }
 
         self.initial = nn.Sequential(
@@ -306,7 +309,7 @@ class ChestNetL(nn.Module):
             nn.Linear(256, 128),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
-            nn.Linear(128, 1),
+            nn.Linear(128, 14),
             nn.Sigmoid(),
         )
 

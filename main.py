@@ -1,10 +1,9 @@
 import torch
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
-from src.models.chestnets import ChestNetM, ChestNetS
+from src.models.chestnets import ChestNetS
 from src.training.trainer import ChestXRayTrainer
 from src.interpretability.evaluation import evaluate_model, MetricsReporter
-import mlflow
 
 import structlog
 
@@ -25,16 +24,18 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+
 def main():
     # Instantiate configs
     train_config = TrainingConfig()
     path_config = PathConfig()
 
-    # Set MLflow tracking URI
-    mlflow.set_tracking_uri(path_config.mlflow_tracking_uri)
-
     # Prepare device
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "mps"
+        if torch.backends.mps.is_available()
+        else "cuda" if torch.cuda.is_available() else "cpu"
+    )
 
     logger.info("Using device", device=device)
 
