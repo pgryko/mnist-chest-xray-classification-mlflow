@@ -58,39 +58,49 @@ class ChestXRayTrainer:
         # MLflow
         if mlflow_tracking_uri:
             mlflow.set_tracking_uri(mlflow_tracking_uri)
-            # Use torchinfo instead of torchsummary as its newer and supports mac GPUS
-            model_stats: ModelStatistics = summary(
-                self.model,
-                input_size=(1, 1, 64, 64),  # (batch_size, channels, height, width)
-                col_names=[
-                    "input_size",
-                    "output_size",
-                    "num_params",
-                    "kernel_size",
-                    "mult_adds",
-                ],
-                col_width=20,
-                row_settings=["var_names"],
-                verbose=True,
-            )
 
-            logger.info("Model Summary", model_stats=model_stats)
+    def log_model_summary(self):
+        # Use torchinfo instead of torchsummary as its newer and supports mac GPUS
+        model_stats: ModelStatistics = summary(
+            self.model,
+            input_size=(1, 1, 64, 64),  # (batch_size, channels, height, width)
+            col_names=[
+                "input_size",
+                "output_size",
+                "num_params",
+                "kernel_size",
+                "mult_adds",
+            ],
+            col_width=20,
+            row_settings=["var_names"],
+            verbose=True,
+        )
 
-            # Log model details and summary
-            mlflow.log_param("model_name", self.model.model_name)
-            mlflow.log_dict(self.model.model_details, "model_details.json")
-            mlflow.log_text(str(model_stats), "model_summary.txt")
+        logger.info("Model Summary", model_stats=model_stats)
 
-            # Log additional model statistics
-            if model_stats:
-                mlflow.log_params(
-                    {
-                        "total_params": model_stats.total_params,
-                        "trainable_params": model_stats.trainable_params,
-                        "non_trainable_params": model_stats.total_params
-                        - model_stats.trainable_params,
-                    }
-                )
+        # Log model details and summary
+        mlflow.log_param("model_name", self.model.model_name)
+        mlflow.log_dict(self.model.model_details, "model_details.json")
+        mlflow.log_text(str(model_stats), "model_summary.txt")
+
+        if model_stats:
+            model_params = {
+                "total_params": model_stats.total_params,
+                "trainable_params": model_stats.trainable_params,
+                "non_trainable_params": model_stats.total_params
+                - model_stats.trainable_params,
+            }
+            mlflow.log_params(model_params)
+
+        # Log training hyperparameters
+        training_params = {
+            "model_name": self.model.__class__.__name__,
+            "lr": self.config.learning_rate,
+            "batch_size": self.config.batch_size,
+            "num_epochs": self.config.num_epochs,
+            "weight_decay": self.config.weight_decay,
+        }
+        mlflow.log_params(training_params)
 
     def train_one_epoch(self):
         self.model.train()
@@ -141,47 +151,21 @@ class ChestXRayTrainer:
         roc_auc = roc_auc_score(targets_list, preds_list)
         return avg_loss, roc_auc
 
-    def train_model(self):
+    def train_model(self, experiment_name="ChestXRay"):
         # mlflow.end_run()
+
+        # if mlflow.active_run():
+        #     mlflow.end_run()
+
+        if experiment_name:
+            mlflow.set_experiment(experiment_name)
 
         early_stopping = EarlyStopping(patience=self.config.patience, min_delta=0.0)
         best_val_loss = float("inf")
 
         with mlflow.start_run(log_system_metrics=True):
             # Log initial hyperparams
-            mlflow.log_params(
-                {
-                    "model_name": self.model.__class__.__name__,
-                    "lr": self.config.learning_rate,
-                    "batch_size": self.config.batch_size,
-                    "num_epochs": self.config.num_epochs,
-                    "weight_decay": self.config.weight_decay,
-                }
-            )
-
-            # Create an input example
-            sample_input = torch.randn(
-                1, 1, 64, 64
-            )  # Batch size 1, 1 channel, 64x64 image
-
-            # Generate model output for the sample input
-            self.model.eval()
-            with torch.no_grad():
-                sample_output = self.model(sample_input)
-
-            # Infer the signature from sample input and output
-            signature = infer_signature(
-                sample_input.numpy(),  # Convert to numpy for signature
-                sample_output.numpy(),  # Convert to numpy for signature
-            )
-
-            # Log the model with signature and input example
-            mlflow.pytorch.log_model(
-                self.model,
-                "model",
-                signature=signature,
-                input_example=sample_input.numpy(),
-            )
+            self.log_model_summary()
 
             for epoch in range(self.config.num_epochs):
                 train_loss, train_auc = self.train_one_epoch()
@@ -211,7 +195,14 @@ class ChestXRayTrainer:
                 # Early Stopping
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
-                    mlflow.pytorch.log_model(self.model, artifact_path="best_model")
+                    mlflow.pytorch.log_model(
+                        self.model,
+                        artifact_path="best_model",
+                        signature=infer_signature(
+                            next(iter(self.val_loader))[0].numpy(),
+                            next(iter(self.val_loader))[1].numpy(),
+                        ),
+                    )
                     early_stopping.counter = 0
 
                     # Collect predictions from best validation epoch
