@@ -153,7 +153,7 @@ interpretation = interpreter.explain(sample_image)
 
 ### MLflow Tracking
 ```bash
-mlflow server --host 127.0.0.1 --port 8080
+mlflow server --host 127.0.0.1 --port 5000
 ```
 
 ### FastAPI Service

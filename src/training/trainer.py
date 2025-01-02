@@ -7,6 +7,9 @@ import mlflow
 import mlflow.pytorch
 from sklearn.metrics import roc_auc_score
 
+from torchinfo import summary, ModelStatistics
+import io
+from contextlib import redirect_stdout
 
 class EarlyStopping:
     def __init__(self, patience=7, min_delta=0.0):
@@ -52,6 +55,29 @@ class ChestXRayTrainer:
         # MLflow
         if mlflow_tracking_uri:
             mlflow.set_tracking_uri(mlflow_tracking_uri)
+            # Use torchinfo instead of torchsummary as its newer and supports mac GPUS
+            model_stats : ModelStatistics = summary(
+                self.model,
+                # input_size=(1, 1, 64, 64),  # (batch_size, channels, height, width)
+                # col_names=["input_size", "output_size", "num_params", "kernel_size", "mult_adds"],
+                # col_width=20,
+                # row_settings=["var_names"],
+                verbose=True
+            )
+            model_summary = str(model_stats)
+
+            # Log model details and summary
+            mlflow.log_param("model_name", self.model.model_name)
+            mlflow.log_dict(self.model.model_details, "model_details.json")
+            mlflow.log_text(model_summary, "model_summary.txt")
+
+            # Log additional model statistics
+            if model_stats:
+                mlflow.log_params({
+                    "total_params": model_stats.total_params,
+                    "trainable_params": model_stats.trainable_params,
+                    "non_trainable_params": model_stats.total_params - model_stats.trainable_params
+                })
 
     def train_one_epoch(self):
         self.model.train()

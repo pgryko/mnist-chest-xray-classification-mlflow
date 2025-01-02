@@ -1,7 +1,7 @@
 import torch
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
-from src.models.chestnets import ChestNetM
+from src.models.chestnets import ChestNetM, ChestNetS
 from src.training.trainer import ChestXRayTrainer
 from src.interpretability.evaluation import evaluate_model, MetricsReporter
 import mlflow
@@ -36,9 +36,7 @@ def main():
     # Prepare device
     device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
 
-    # {{ edit_2 }}
     logger.info("Using device", device=device)
-    # {{ edit_2 }}
 
     # DataModule
     data_module = ChestDataModule(train_config, path_config)
@@ -47,7 +45,7 @@ def main():
     test_loader = data_module.test_dataloader()
 
     # Choose model
-    model = ChestNetM().to(device)
+    model = ChestNetS().to(device)
 
     # Trainer
     trainer = ChestXRayTrainer(
