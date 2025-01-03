@@ -1,3 +1,36 @@
+# MLflow - ignore local db and logs
+mlruns/**/meta.yaml
+mlruns/**/metrics
+mlruns/**/params
+mlruns/**/tags
+mlruns/**/*.json
+
+# Only track model artifacts with LFS
+!mlruns/**/*.pkl
+!mlruns/**/*.pth
+!mlruns/**/*.pt
+!mlruns/**/*.bin
+!mlruns/**/*.onnx
+
+# MLflow artifacts - similar rules
+mlartifacts/**/meta.yaml
+mlartifacts/**/metrics
+mlartifacts/**/params
+mlartifacts/**/tags
+mlartifacts/**/*.json
+
+# Only track model artifacts with LFS
+!mlartifacts/**/*.pkl
+!mlartifacts/**/*.pth
+!mlartifacts/**/*.pt
+!mlartifacts/**/*.bin
+!mlartifacts/**/*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

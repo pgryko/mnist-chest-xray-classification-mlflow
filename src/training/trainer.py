@@ -11,6 +11,8 @@ from mlflow.models.signature import infer_signature
 
 from torchinfo import summary, ModelStatistics
 
+from src.interpretability.evaluation import evaluate_model, MetricsReporter
+
 logger = structlog.get_logger()
 
 
@@ -36,7 +38,14 @@ class EarlyStopping:
 
 class ChestXRayTrainer:
     def __init__(
-        self, model, device, train_loader, val_loader, config, mlflow_tracking_uri=None
+        self,
+        model,
+        device,
+        train_loader,
+        val_loader,
+        test_loader,
+        config,
+        mlflow_tracking_uri=None,
     ):
         self.model = model
         self.device = device
@@ -182,10 +191,14 @@ class ChestXRayTrainer:
                     step=epoch,
                 )
 
-                print(
-                    f"Epoch [{epoch + 1}/{self.config.num_epochs}] "
-                    f"Train Loss: {train_loss:.4f} | Train AUC: {train_auc:.4f} "
-                    f"Val Loss: {val_loss:.4f} | Val AUC: {val_auc:.4f}"
+                logger.info(
+                    "Training epoch completed",
+                    epoch=epoch + 1,
+                    total_epochs=self.config.num_epochs,
+                    train_loss=round(train_loss, 4),
+                    train_auc=round(train_auc, 4),
+                    val_loss=round(val_loss, 4),
+                    val_auc=round(val_auc, 4),
                 )
 
                 # Early Stopping
@@ -201,22 +214,6 @@ class ChestXRayTrainer:
                     )
                     early_stopping.counter = 0
 
-                    # Collect predictions from best validation epoch
-                    self.model.eval()
-                    final_targets = []
-                    final_preds = []
-                    with torch.no_grad():
-                        for data, target in self.val_loader:
-                            if data.shape[-1] != 64:
-                                data = nn.functional.interpolate(
-                                    data, size=(64, 64), mode="bilinear"
-                                )
-                            data, target = data.to(self.device), target.float().to(
-                                self.device
-                            )
-                            output = self.model(data)
-                            final_targets.extend(target.cpu().numpy())
-                            final_preds.extend(output.cpu().numpy())
                 else:
                     early_stopping(val_loss)
 
@@ -225,4 +222,3 @@ class ChestXRayTrainer:
                     break
 
         print("Training complete.")
-        return np.array(final_targets), np.array(final_preds)

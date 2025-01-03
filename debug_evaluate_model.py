@@ -7,6 +7,8 @@ from src.interpretability.evaluation import MetricsReporter, evaluate_model
 
 import structlog
 
+from src.utils.helpers import load_best_model
+
 # Configure structlog
 structlog.configure(
     processors=[
@@ -27,7 +29,7 @@ logger = structlog.get_logger()
 
 def main():
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=100)
+    train_config = TrainingConfig()
     path_config = PathConfig()
 
     # Prepare device
@@ -45,23 +47,14 @@ def main():
     val_loader = data_module.val_dataloader()
     test_loader = data_module.test_dataloader()
 
-    # Choose model
-    model = ChestNetS().to(device)
-
-    # Trainer
-    trainer = ChestXRayTrainer(
-        model=model,
-        device=device,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        config=train_config,
-        mlflow_tracking_uri=path_config.mlflow_tracking_uri,
+    loaded_model = load_best_model(
+        experiment_name="ChestXRay",
+        metric="val_loss",
+        tracking_uri="http://localhost:5000",
     )
 
-    trainer.train_model()
-
     # Evaluate on the test set
-    y_true, y_prob = evaluate_model(model, test_loader, device)
+    y_true, y_prob = evaluate_model(loaded_model, test_loader, device)
 
     # Generate final metrics
     reporter = MetricsReporter()

@@ -53,6 +53,28 @@ cd mnist-chest-xray-classification
 poetry install
 ```
 
+
+
+#### Install Git LFS
+We use git-lfs to store large files such as model weights and datasets. 
+To install Git LFS, follow the instructions below:
+
+For Ubuntu/Debian
+```bash
+sudo apt-get install git-lfs
+```
+
+For macOS using Homebrew
+```bash
+brew install git-lfs
+```
+
+Initialize Git LFS
+```bash
+git lfs install
+```
+
+
 ### Dataset Setup
 ```python
 from medmnist import ChestMNIST

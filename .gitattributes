@@ -1,0 +1,16 @@
+# MLflow specific patterns
+mlruns/**/*.pkl filter=lfs diff=lfs merge=lfs -text
+mlruns/**/*.pth filter=lfs diff=lfs merge=lfs -text
+mlruns/**/*.pt filter=lfs diff=lfs merge=lfs -text
+mlruns/**/*.bin filter=lfs diff=lfs merge=lfs -text
+mlruns/**/*.onnx filter=lfs diff=lfs merge=lfs -text
+mlartifacts/**/*.pkl filter=lfs diff=lfs merge=lfs -text
+mlartifacts/**/*.pth filter=lfs diff=lfs merge=lfs -text
+mlartifacts/**/*.pt filter=lfs diff=lfs merge=lfs -text
+mlartifacts/**/*.bin filter=lfs diff=lfs merge=lfs -text
+mlartifacts/**/*.onnx filter=lfs diff=lfs merge=lfs -text
+
+# Large numpy arrays and datasets
+**/*.npy filter=lfs diff=lfs merge=lfs -text
+**/*.npz filter=lfs diff=lfs merge=lfs -text
+**/*.h5 filter=lfs diff=lfs merge=lfs -text

@@ -54,7 +54,24 @@ def evaluate_model(model, data_loader, device):
         for data, target in data_loader:
             data = data.to(device)
             output = model(data)
-            y_true.extend(target.numpy().astype(int))
-            y_prob.extend(output.cpu().numpy())
-    y_prob = np.array(y_prob).ravel()
-    return np.array(y_true), y_prob
+
+            # Ensure output is the right shape - assuming sigmoid output
+            probs = torch.sigmoid(output).squeeze()
+
+            # Handle case where squeezing might result in 0-dim tensor for batch size 1
+            if len(probs.shape) == 0:
+                probs = probs.unsqueeze(0)
+
+            # Convert to numpy and ensure 1D array
+            probs = probs.cpu().numpy()
+            if len(probs.shape) > 1:
+                probs = probs.flatten()
+
+            target_np = target.numpy()
+            if len(target_np.shape) > 1:
+                target_np = target_np.flatten()
+
+            y_true.extend(target_np.astype(int))
+            y_prob.extend(probs)
+
+    return np.array(y_true), np.array(y_prob)
