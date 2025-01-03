@@ -1,7 +1,12 @@
+import mlflow
 import torch
 import json
 from pathlib import Path
 from datetime import datetime
+
+from mlflow.tracking import MlflowClient
+
+from src.configs.config import PathConfig
 
 
 class ModelCheckpointer:
@@ -42,3 +47,46 @@ class ModelCheckpointer:
             torch.save(state, best_path)
 
         return checkpoint_path
+
+
+def load_pytorch_model(run_id, tracking_uri=PathConfig.mlflow_tracking_uri):
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+
+    # Load the model
+    loaded_model = mlflow.pytorch.load_model(f"runs:/{run_id}/best_model")
+    return loaded_model
+
+
+def load_best_model(experiment_name="ChestXRay", metric="val_loss", tracking_uri=None):
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+
+    client = MlflowClient()
+
+    # Get experiment ID
+    experiment = client.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        raise ValueError(f"Experiment '{experiment_name}' not found")
+
+    # Get all runs from the experiment
+    runs = client.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        order_by=[
+            f"metrics.{metric} ASC"
+        ],  # ASC for metrics like loss, DESC for metrics like accuracy
+    )
+
+    if not runs:
+        raise ValueError(f"No runs found for experiment '{experiment_name}'")
+
+    # Get the best run (first run since we ordered by metric)
+    best_run = runs[0]
+
+    # Load the model from the best run
+    loaded_model = mlflow.pytorch.load_model(f"runs:/{best_run.info.run_id}/best_model")
+
+    print(
+        f"Loaded model from run {best_run.info.run_id} with {metric}: {best_run.data.metrics.get(metric)}"
+    )
+    return loaded_model

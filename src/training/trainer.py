@@ -152,10 +152,6 @@ class ChestXRayTrainer:
         return avg_loss, roc_auc
 
     def train_model(self, experiment_name="ChestXRay"):
-        # mlflow.end_run()
-
-        # if mlflow.active_run():
-        #     mlflow.end_run()
 
         if experiment_name:
             mlflow.set_experiment(experiment_name)

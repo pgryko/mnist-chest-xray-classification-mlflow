@@ -63,6 +63,7 @@ class ChestDataModule:
             root=self.paths.dataset_root,
             download=True,
             transform=ChestXRayTransforms(is_training=False),
+            size=64,
         )
 
         self.test_dataset = ChestMNIST(
@@ -70,6 +71,7 @@ class ChestDataModule:
             root=self.paths.dataset_root,
             download=True,
             transform=ChestXRayTransforms(is_training=False),
+            size=64,
         )
 
     def train_dataloader(self):
