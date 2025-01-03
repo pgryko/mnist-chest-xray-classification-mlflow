@@ -1,5 +1,4 @@
 # src/training/trainer.py
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,7 +10,6 @@ from mlflow.models.signature import infer_signature
 
 from torchinfo import summary, ModelStatistics
 
-from src.interpretability.evaluation import evaluate_model, MetricsReporter
 
 logger = structlog.get_logger()
 
@@ -43,7 +41,6 @@ class ChestXRayTrainer:
         device,
         train_loader,
         val_loader,
-        test_loader,
         config,
         mlflow_tracking_uri=None,
     ):

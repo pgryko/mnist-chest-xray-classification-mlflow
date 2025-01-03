@@ -1,8 +1,6 @@
 import torch
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
-from src.models.chestnets import ChestNetS
-from src.training.trainer import ChestXRayTrainer
 from src.interpretability.evaluation import MetricsReporter, evaluate_model
 
 import structlog
