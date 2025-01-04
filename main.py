@@ -1,3 +1,4 @@
+import mlflow
 import torch
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
@@ -72,17 +73,18 @@ def main():
     """,
     )
 
-    trainer.train_model()
+    run_id = trainer.train_model()
 
     # Evaluate on the test set
     y_true, y_prob = evaluate_model(model, test_loader, device)
 
-    # Generate final metrics
-    reporter = MetricsReporter()
-    reporter.calculate_metrics(y_true, y_prob)
-    reporter.log_to_mlflow()
+    # Generate final metrics using same run
+    with mlflow.start_run(run_id=run_id):
+        reporter = MetricsReporter()
+        reporter.calculate_metrics(y_true, y_prob)
+        reporter.log_to_mlflow()
 
-    logger.info("Test metrics:", reporter.metrics)
+        logger.info("Test metrics:", reporter.metrics)
 
 
 if __name__ == "__main__":
