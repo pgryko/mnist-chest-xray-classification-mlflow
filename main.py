@@ -28,7 +28,7 @@ logger = structlog.get_logger()
 
 def main():
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=50)
+    train_config = TrainingConfig(num_epochs=5)
     path_config = PathConfig()
 
     # Prepare device

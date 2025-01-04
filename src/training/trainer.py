@@ -23,12 +23,12 @@ logger = structlog.get_logger()
 
 
 class EarlyStopping:
-    def __init__(self, patience=7, min_delta=0.0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = None
-        self.early_stop = False
+    def __init__(self, patience: int = 7, min_delta: float = 0.0) -> None:
+        self.patience: int = patience
+        self.min_delta: float = min_delta
+        self.counter: int = 0
+        self.best_loss: float | None = None
+        self.early_stop: bool = False
 
     def __call__(self, val_loss):
         if self.best_loss is None:
@@ -45,14 +45,14 @@ class EarlyStopping:
 class ChestXRayTrainer:
     def __init__(
         self,
-        model,
-        device,
-        train_loader,
-        val_loader,
-        config,
-        mlflow_tracking_uri=None,
-        experiment_tags=None,
-        experiment_description=None,
+        model: nn.Module,
+        device: torch.device,
+        train_loader: torch.utils.data.DataLoader,
+        val_loader: torch.utils.data.DataLoader,
+        config: any,
+        mlflow_tracking_uri: str | None = None,
+        experiment_tags: dict[str, str] | None = None,
+        experiment_description: str | None = None,
     ):
         self.model = model
         self.device = device
@@ -212,18 +212,42 @@ class ChestXRayTrainer:
         }
         mlflow.log_params(training_params)
 
-    def _calculate_metrics(self, targets_list, preds_list):
+    def _calculate_metrics(
+        self, targets_list: list, preds_list: list
+    ) -> dict[str, float | list]:
         # Convert predictions to binary (0/1) using 0.5 threshold
         preds_binary = (np.array(preds_list) > 0.5).astype(int)
         targets = np.array(targets_list)
 
+        # For multilabel data, calculate confusion matrix for each label
+        n_classes = targets.shape[1]  # Number of classes/labels
+        confusion_matrices = []
+
+        for i in range(n_classes):
+
+            # Each confusion matrix will show:
+            #
+            # True Negatives (TN) at position [0,0]
+            # False Positives (FP) at position [0,1]
+            # False Negatives (FN) at position [1,0]
+            # True Positives (TP) at position [1,1]
+
+            cm = confusion_matrix(
+                targets[:, i], preds_binary[:, i], labels=[0, 1]
+            ).tolist()
+            confusion_matrices.append(cm)
+
         return {
             "accuracy": accuracy_score(targets, preds_binary),
-            "precision": precision_score(targets, preds_binary),
-            "recall": recall_score(targets, preds_binary),
-            "f1": f1_score(targets, preds_binary),
-            "roc_auc": roc_auc_score(targets, preds_list),
-            "confusion_matrix": confusion_matrix(targets, preds_binary).tolist(),
+            "precision": precision_score(
+                targets, preds_binary, average="macro", zero_division=0
+            ),
+            "recall": recall_score(
+                targets, preds_binary, average="macro", zero_division=0
+            ),
+            "f1": f1_score(targets, preds_binary, average="macro", zero_division=0),
+            "roc_auc": roc_auc_score(targets, preds_list, average="macro"),
+            "confusion_matrices": confusion_matrices,
         }
 
     def train_one_epoch(self):
@@ -275,7 +299,7 @@ class ChestXRayTrainer:
         metrics = self._calculate_metrics(targets_list, preds_list)
         return avg_loss, metrics
 
-    def train_model(self, experiment_name="ChestXRay"):
+    def train_model(self, experiment_name: str = "ChestXRay"):
 
         if experiment_name:
             mlflow.set_experiment(experiment_name)
@@ -325,13 +349,25 @@ class ChestXRayTrainer:
                     step=epoch,
                 )
 
-                # Log confusion matrix as a separate artifact
+                # Log confusion matrices as a separate artifact
                 mlflow.log_dict(
                     {
-                        "train_confusion_matrix": train_metrics["confusion_matrix"],
-                        "val_confusion_matrix": val_metrics["confusion_matrix"],
+                        f"train_confusion_matrix_class_{i}": train_metrics[
+                            "confusion_matrices"
+                        ][i]
+                        for i in range(len(train_metrics["confusion_matrices"]))
                     },
-                    f"confusion_matrices_epoch_{epoch}.json",
+                    f"train_confusion_matrices_epoch_{epoch}.json",
+                )
+
+                mlflow.log_dict(
+                    {
+                        f"val_confusion_matrix_class_{i}": val_metrics[
+                            "confusion_matrices"
+                        ][i]
+                        for i in range(len(val_metrics["confusion_matrices"]))
+                    },
+                    f"val_confusion_matrices_epoch_{epoch}.json",
                 )
 
                 logger.info(

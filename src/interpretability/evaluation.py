@@ -7,11 +7,17 @@ from sklearn.metrics import confusion_matrix, classification_report, roc_auc_sco
 import mlflow
 
 
-class MetricsReporter:
-    def __init__(self):
-        self.metrics = {}
+from typing import Dict, Any
+import numpy.typing as npt
 
-    def calculate_metrics(self, y_true, y_pred_proba):
+
+class MetricsReporter:
+    def __init__(self) -> None:
+        self.metrics: Dict[str, Any] = {}
+
+    def calculate_metrics(
+        self, y_true: npt.NDArray[np.int_], y_pred_proba: npt.NDArray[np.float64]
+    ) -> None:
         """Calculate metrics for both binary and multi-class classification.
 
         Args:
@@ -19,11 +25,11 @@ class MetricsReporter:
             y_pred_proba: Model predictions (probabilities)
         """
         # Check if this is binary or multi-class classification
-        is_multiclass = len(y_pred_proba.shape) > 1 and y_pred_proba.shape[1] > 1
+        is_multiclass: bool = len(y_pred_proba.shape) > 1 and y_pred_proba.shape[1] > 1
 
         if is_multiclass:
             # Multi-class case
-            y_pred = np.argmax(y_pred_proba, axis=1)
+            y_pred: npt.NDArray[np.int_] = np.argmax(y_pred_proba, axis=1)
             if len(y_true.shape) > 1:
                 y_true = np.argmax(y_true, axis=1)
 
@@ -41,7 +47,7 @@ class MetricsReporter:
             )
         else:
             # Binary case
-            y_pred = (y_pred_proba >= 0.5).astype(int)
+            y_pred: npt.NDArray[np.int_] = (y_pred_proba >= 0.5).astype(int)
 
             self.metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred)
             self.metrics["classification_report"] = classification_report(
@@ -114,10 +120,24 @@ class MetricsReporter:
         plt.close()  # Close the figure to free memory
 
 
-def evaluate_model(model, data_loader, device):
+def evaluate_model(
+    model: torch.nn.Module,
+    data_loader: torch.utils.data.DataLoader,
+    device: torch.device,
+) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.float64]]:
+    """Evaluate a PyTorch model and return true labels and predicted probabilities.
+
+    Args:
+        model: The PyTorch model to evaluate
+        data_loader: DataLoader containing the evaluation data
+        device: Device to run the model on (CPU or GPU)
+
+    Returns:
+        A tuple of (true labels, predicted probabilities) as numpy arrays
+    """
     model.eval()
-    y_true = []
-    y_prob = []
+    y_true: list[np.ndarray] = []
+    y_prob: list[np.ndarray] = []
     with torch.no_grad():
         for data, target in data_loader:
             data = data.to(device)

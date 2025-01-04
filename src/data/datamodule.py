@@ -5,8 +5,22 @@ from albumentations.pytorch import ToTensorV2
 from medmnist import ChestMNIST
 
 
+from numpy.typing import NDArray
+from PIL.Image import Image
+import torch
+from typing import Union
+
+from src.configs.config import TrainingConfig, PathConfig
+
+
 class ChestXRayTransforms:
-    def __init__(self, is_training=True, rotate_limit=15, brightness=0.2, contrast=0.2):
+    def __init__(
+        self,
+        is_training: bool = True,
+        rotate_limit: int = 15,
+        brightness: float = 0.2,
+        contrast: float = 0.2,
+    ) -> None:
         if is_training:
             self.transform = A.Compose(
                 [
@@ -35,13 +49,13 @@ class ChestXRayTransforms:
                 ]
             )
 
-    def __call__(self, img):
+    def __call__(self, img: Union[Image, NDArray]) -> torch.Tensor:
         # Convert PIL image or numpy array to numpy for albumentations
         return self.transform(image=np.array(img))["image"]
 
 
 class ChestDataModule:
-    def __init__(self, config, paths):
+    def __init__(self, config: TrainingConfig, paths: PathConfig):
         self.config = config
         self.paths = paths
 
