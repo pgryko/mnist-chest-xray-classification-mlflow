@@ -27,7 +27,7 @@ logger = structlog.get_logger()
 
 def main():
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=100)
+    train_config = TrainingConfig(num_epochs=50)
     path_config = PathConfig()
 
     # Prepare device
@@ -56,6 +56,20 @@ def main():
         val_loader=val_loader,
         config=train_config,
         mlflow_tracking_uri=path_config.mlflow_tracking_uri,
+        experiment_tags={
+            "model_type": "ChestNetS",
+            "dataset": "ChestMNIST",
+            "purpose": "production",
+            "version": "1.0.0",
+            "author": "pgryko",
+            "final_activation": "softmax",
+        },
+        experiment_description="""
+    Training run for chest X-ray classification using ChestNetS architecture.
+    Dataset: ChestMNIST
+    Purpose: Production model training
+    Special notes: Using augmented dataset with enhanced preprocessing
+    """,
     )
 
     trainer.train_model()
@@ -67,7 +81,8 @@ def main():
     reporter = MetricsReporter()
     reporter.calculate_metrics(y_true, y_prob)
     reporter.log_to_mlflow()
-    print("Test ROC AUC:", reporter.metrics["roc_auc"])
+
+    logger.info("Test metrics:", reporter.metrics)
 
 
 if __name__ == "__main__":

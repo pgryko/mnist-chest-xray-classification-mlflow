@@ -1,3 +1,4 @@
+import mlflow
 import torch
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
@@ -55,10 +56,12 @@ def main():
     y_true, y_prob = evaluate_model(loaded_model, test_loader, device)
 
     # Generate final metrics
-    reporter = MetricsReporter()
-    reporter.calculate_metrics(y_true, y_prob)
-    reporter.log_to_mlflow()
-    print("Test ROC AUC:", reporter.metrics["roc_auc"])
+    with mlflow.start_run(run_name="model_evaluation"):
+        reporter = MetricsReporter()
+        reporter.calculate_metrics(y_true, y_prob)
+        reporter.log_to_mlflow()
+        print("Test Macro ROC AUC:", reporter.metrics["macro_roc_auc"])
+        print("Test Weighted ROC AUC:", reporter.metrics["weighted_roc_auc"])
 
 
 if __name__ == "__main__":

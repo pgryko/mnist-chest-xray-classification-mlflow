@@ -42,7 +42,11 @@ class ChestNetS(nn.Module):
             "initial_filters": 32,
             "max_filters": 128,
             "dropout_rate": 0.5,
-            "final_activation": "sigmoid",
+            # Sigmoid is appropriate for binary classification or multi-label classification
+            # where each class is independent
+            # Softmax is appropriate for multi-class classification where classes are
+            # mutually exclusive and probabilities should sum to 1.0
+            "final_activation": "softmax",
         }
 
         self.features = nn.Sequential(
@@ -69,7 +73,6 @@ class ChestNetS(nn.Module):
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
             nn.Linear(512, 14),
-            nn.Sigmoid(),
         )
 
     def forward(self, x):
@@ -84,7 +87,9 @@ class ChestNetS(nn.Module):
         x = self.features(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
-        return x
+        return torch.softmax(
+            x, dim=1
+        )  # Apply softmax for proper probability distribution
 
 
 class ResidualBlock(nn.Module):

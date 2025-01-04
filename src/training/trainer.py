@@ -1,10 +1,18 @@
 # src/training/trainer.py
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import mlflow
 import mlflow.pytorch
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import (
+    roc_auc_score,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+)
 import structlog
 from mlflow.models.signature import infer_signature
 
@@ -43,6 +51,8 @@ class ChestXRayTrainer:
         val_loader,
         config,
         mlflow_tracking_uri=None,
+        experiment_tags=None,
+        experiment_description=None,
     ):
         self.model = model
         self.device = device
@@ -60,6 +70,9 @@ class ChestXRayTrainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode="min", factor=0.1, patience=5, verbose=True
         )
+
+        self.experiment_tags = experiment_tags or {}
+        self.experiment_description = experiment_description
 
         # MLflow
         if mlflow_tracking_uri:
@@ -108,6 +121,20 @@ class ChestXRayTrainer:
         }
         mlflow.log_params(training_params)
 
+    def _calculate_metrics(self, targets_list, preds_list):
+        # Convert predictions to binary (0/1) using 0.5 threshold
+        preds_binary = (np.array(preds_list) > 0.5).astype(int)
+        targets = np.array(targets_list)
+
+        return {
+            "accuracy": accuracy_score(targets, preds_binary),
+            "precision": precision_score(targets, preds_binary),
+            "recall": recall_score(targets, preds_binary),
+            "f1": f1_score(targets, preds_binary),
+            "roc_auc": roc_auc_score(targets, preds_list),
+            "confusion_matrix": confusion_matrix(targets, preds_binary).tolist(),
+        }
+
     def train_one_epoch(self):
         self.model.train()
         total_loss = 0.0
@@ -129,8 +156,8 @@ class ChestXRayTrainer:
             preds_list.extend(output.detach().cpu().numpy())
 
         avg_loss = total_loss / len(self.train_loader)
-        roc_auc = roc_auc_score(targets_list, preds_list)
-        return avg_loss, roc_auc
+        metrics = self._calculate_metrics(targets_list, preds_list)
+        return avg_loss, metrics
 
     def validate_one_epoch(self):
         self.model.eval()
@@ -154,24 +181,35 @@ class ChestXRayTrainer:
                 preds_list.extend(output.cpu().numpy())
 
         avg_loss = total_loss / len(self.val_loader)
-        roc_auc = roc_auc_score(targets_list, preds_list)
-        return avg_loss, roc_auc
+        metrics = self._calculate_metrics(targets_list, preds_list)
+        return avg_loss, metrics
 
     def train_model(self, experiment_name="ChestXRay"):
 
         if experiment_name:
             mlflow.set_experiment(experiment_name)
+            # Set experiment description if provided
+            if self.experiment_description:
+                experiment = mlflow.get_experiment_by_name(experiment_name)
+                if experiment:
+                    mlflow.set_experiment_tag(
+                        "mlflow.note.content",
+                        self.experiment_description,
+                    )
 
         early_stopping = EarlyStopping(patience=self.config.patience, min_delta=0.0)
         best_val_loss = float("inf")
 
         with mlflow.start_run(log_system_metrics=True):
+            # Log tags
+            mlflow.set_tags(self.experiment_tags)
+
             # Log initial hyperparams
             self.log_model_summary()
 
             for epoch in range(self.config.num_epochs):
-                train_loss, train_auc = self.train_one_epoch()
-                val_loss, val_auc = self.validate_one_epoch()
+                train_loss, train_metrics = self.train_one_epoch()
+                val_loss, val_metrics = self.validate_one_epoch()
 
                 # Update learning rate
                 if self.scheduler:
@@ -181,11 +219,28 @@ class ChestXRayTrainer:
                 mlflow.log_metrics(
                     {
                         "train_loss": train_loss,
-                        "train_auc": train_auc,
+                        "train_accuracy": train_metrics["accuracy"],
+                        "train_precision": train_metrics["precision"],
+                        "train_recall": train_metrics["recall"],
+                        "train_f1": train_metrics["f1"],
+                        "train_auc": train_metrics["roc_auc"],
                         "val_loss": val_loss,
-                        "val_auc": val_auc,
+                        "val_accuracy": val_metrics["accuracy"],
+                        "val_precision": val_metrics["precision"],
+                        "val_recall": val_metrics["recall"],
+                        "val_f1": val_metrics["f1"],
+                        "val_auc": val_metrics["roc_auc"],
                     },
                     step=epoch,
+                )
+
+                # Log confusion matrix as a separate artifact
+                mlflow.log_dict(
+                    {
+                        "train_confusion_matrix": train_metrics["confusion_matrix"],
+                        "val_confusion_matrix": val_metrics["confusion_matrix"],
+                    },
+                    f"confusion_matrices_epoch_{epoch}.json",
                 )
 
                 logger.info(
@@ -193,9 +248,15 @@ class ChestXRayTrainer:
                     epoch=epoch + 1,
                     total_epochs=self.config.num_epochs,
                     train_loss=round(train_loss, 4),
-                    train_auc=round(train_auc, 4),
+                    train_metrics={
+                        k: round(v, 4) if isinstance(v, float) else v
+                        for k, v in train_metrics.items()
+                    },
                     val_loss=round(val_loss, 4),
-                    val_auc=round(val_auc, 4),
+                    val_metrics={
+                        k: round(v, 4) if isinstance(v, float) else v
+                        for k, v in val_metrics.items()
+                    },
                 )
 
                 # Early Stopping
