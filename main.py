@@ -8,7 +8,6 @@ from src.interpretability.evaluation import MetricsReporter, evaluate_model
 
 import structlog
 
-# Configure structlog
 structlog.configure(
     processors=[
         structlog.processors.add_log_level,
@@ -28,7 +27,7 @@ logger = structlog.get_logger()
 
 def main():
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=500)
+    train_config = TrainingConfig(num_epochs=10)
     path_config = PathConfig()
 
     # Prepare device
@@ -63,7 +62,7 @@ def main():
             "purpose": "production",
             "version": "1.0.0",
             "author": "pgryko",
-            "final_activation": "softmax",
+            "final_activation": "sigmoid",
             "modifications": "Long epochs 500",
         },
         experiment_description="""

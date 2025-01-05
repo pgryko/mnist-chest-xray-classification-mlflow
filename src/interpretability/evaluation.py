@@ -6,12 +6,20 @@ import numpy as np
 import numpy.typing as npt
 import seaborn as sns
 import torch
+from scipy.special import softmax
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from medmnist import INFO
 
 
 class MetricsReporter:
-    def __init__(self) -> None:
+    def __init__(self, class_names=None) -> None:
+        if class_names is None:
+            chest_info = INFO["chestmnist"]
+            class_names = [chest_info["label"][str(i)] for i in range(14)]
         self.metrics: Dict[str, Any] = {}
+        self.class_names = (
+            class_names if class_names is not None else [str(i) for i in range(14)]
+        )
 
     def calculate_metrics(
         self, y_true: npt.NDArray[np.int_], y_pred_proba: npt.NDArray[np.float64]
@@ -27,6 +35,9 @@ class MetricsReporter:
 
         if is_multiclass:
             # Multi-class case
+            # Ensure probabilities sum to 1 using softmax
+            y_pred_proba_normalized = softmax(y_pred_proba, axis=1)
+
             y_pred: npt.NDArray[np.int_] = np.argmax(y_pred_proba, axis=1)
             if len(y_true.shape) > 1:
                 y_true = np.argmax(y_true, axis=1)
@@ -36,12 +47,12 @@ class MetricsReporter:
                 y_true, y_pred, output_dict=True
             )
 
-            # Calculate macro and weighted ROC AUC
+            # Calculate macro and weighted ROC AUC using normalized probabilities
             self.metrics["macro_roc_auc"] = roc_auc_score(
-                y_true, y_pred_proba, multi_class="ovr", average="macro"
+                y_true, y_pred_proba_normalized, multi_class="ovr", average="macro"
             )
             self.metrics["weighted_roc_auc"] = roc_auc_score(
-                y_true, y_pred_proba, multi_class="ovr", average="weighted"
+                y_true, y_pred_proba_normalized, multi_class="ovr", average="weighted"
             )
         else:
             # Binary case
@@ -66,43 +77,137 @@ class MetricsReporter:
             annot=True,
             fmt="d",
             cmap="Blues",
-            xticklabels=range(cm.shape[1]),
-            yticklabels=range(cm.shape[0]),
+            xticklabels=self.class_names[: cm.shape[1]],
+            yticklabels=self.class_names[: cm.shape[0]],
         )
         plt.xlabel("Predicted Label")
         plt.ylabel("True Label")
         plt.title("Confusion Matrix")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
         return plt.gcf()
+
+    # def log_to_mlflow(self):
+    #     """Log metrics to MLflow for both binary and multi-class cases."""
+    #     is_multiclass = "macro_roc_auc" in self.metrics
+    #
+    #     if is_multiclass:
+    #         # Log multi-class metrics
+    #         mlflow.log_metric("macro_roc_auc", self.metrics["macro_roc_auc"])
+    #         mlflow.log_metric("weighted_roc_auc", self.metrics["weighted_roc_auc"])
+    #     else:
+    #         # Log binary metrics
+    #         mlflow.log_metric("roc_auc", self.metrics["roc_auc"])
+    #
+    #     # Log classification report metrics
+    #     report = self.metrics["classification_report"]
+    #     mlflow.log_metric("accuracy", report["accuracy"])
+    #
+    #     # Log per-class metrics
+    #     report = self.metrics["classification_report"]
+    #     for i, class_label in enumerate(report.keys()):
+    #         if class_label in ["accuracy", "macro avg", "weighted avg"]:
+    #             continue
+    #         class_metrics = report[class_label]
+    #         class_name = (
+    #             self.class_names[int(class_label)]
+    #             if i < len(self.class_names)
+    #             else class_label
+    #         )
+    #         mlflow.log_metric(f"precision_{class_name}", class_metrics["precision"])
+    #         mlflow.log_metric(f"recall_{class_name}", class_metrics["recall"])
+    #         mlflow.log_metric(f"f1_score_{class_name}", class_metrics["f1-score"])
+    #         mlflow.log_metric(f"support_{class_name}", class_metrics["support"])
+    #
+    #     # Log macro and weighted averages
+    #     for avg_type in ["macro avg", "weighted avg"]:
+    #         avg_metrics = report[avg_type]
+    #         prefix = avg_type.replace(" ", "_")
+    #         mlflow.log_metric(f"{prefix}_precision", avg_metrics["precision"])
+    #         mlflow.log_metric(f"{prefix}_recall", avg_metrics["recall"])
+    #         mlflow.log_metric(f"{prefix}_f1_score", avg_metrics["f1-score"])
+    #
+    #     # Log confusion matrix plot
+    #     cm_fig = self.plot_confusion_matrix()
+    #     mlflow.log_figure(cm_fig, "confusion_matrix.png")
+    #     plt.close()  # Close the figure to free memory
 
     def log_to_mlflow(self):
         """Log metrics to MLflow for both binary and multi-class cases."""
         is_multiclass = "macro_roc_auc" in self.metrics
 
         if is_multiclass:
-            # Log multi-class metrics
             mlflow.log_metric("macro_roc_auc", self.metrics["macro_roc_auc"])
             mlflow.log_metric("weighted_roc_auc", self.metrics["weighted_roc_auc"])
         else:
-            # Log binary metrics
             mlflow.log_metric("roc_auc", self.metrics["roc_auc"])
 
-        # Log classification report metrics
+        # Log accuracy
         report = self.metrics["classification_report"]
         mlflow.log_metric("accuracy", report["accuracy"])
 
-        # Log per-class metrics
-        for class_label in report.keys():
+        # Create consolidated per-class metrics visualizations
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 16))
+
+        metrics_data = []
+
+        # Collect metrics for each class
+        for i, class_label in enumerate(report.keys()):
             if class_label in ["accuracy", "macro avg", "weighted avg"]:
                 continue
+
             class_metrics = report[class_label]
-            mlflow.log_metric(
-                f"precision_class_{class_label}", class_metrics["precision"]
+            class_name = (
+                self.class_names[int(class_label)]
+                if i < len(self.class_names)
+                else class_label
             )
-            mlflow.log_metric(f"recall_class_{class_label}", class_metrics["recall"])
-            mlflow.log_metric(
-                f"f1_score_class_{class_label}", class_metrics["f1-score"]
+
+            metrics_data.append(
+                {
+                    "class_name": class_name,
+                    "precision": class_metrics["precision"],
+                    "recall": class_metrics["recall"],
+                    "f1_score": class_metrics["f1-score"],
+                    "support": class_metrics["support"],
+                }
             )
-            mlflow.log_metric(f"support_class_{class_label}", class_metrics["support"])
+
+        # Sort by support count (descending)
+        metrics_data.sort(key=lambda x: x["support"], reverse=True)
+
+        # Unpack sorted data
+        class_names = [d["class_name"] for d in metrics_data]
+        precision_scores = [d["precision"] for d in metrics_data]
+        recall_scores = [d["recall"] for d in metrics_data]
+        f1_scores = [d["f1_score"] for d in metrics_data]
+        support_values = [d["support"] for d in metrics_data]
+
+        # Plot precision, recall, and f1 scores
+        x = np.arange(len(class_names))
+        width = 0.25
+
+        ax1.bar(x - width, precision_scores, width, label="Precision")
+        ax1.bar(x, recall_scores, width, label="Recall")
+        ax1.bar(x + width, f1_scores, width, label="F1-Score")
+        ax1.set_ylabel("Score")
+        ax1.set_title("Precision, Recall, and F1-Score by Class (Sorted by Support)")
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(class_names, rotation=45, ha="right")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Plot support values
+        ax2.bar(x, support_values)
+        ax2.set_ylabel("Support")
+        ax2.set_title("Class Distribution (Support)")
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(class_names, rotation=45, ha="right")
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        mlflow.log_figure(fig, "class_metrics.png")
+        plt.close()
 
         # Log macro and weighted averages
         for avg_type in ["macro avg", "weighted avg"]:
@@ -115,7 +220,7 @@ class MetricsReporter:
         # Log confusion matrix plot
         cm_fig = self.plot_confusion_matrix()
         mlflow.log_figure(cm_fig, "confusion_matrix.png")
-        plt.close()  # Close the figure to free memory
+        plt.close()
 
 
 def evaluate_model(

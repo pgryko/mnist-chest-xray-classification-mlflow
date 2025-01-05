@@ -214,40 +214,81 @@ class ChestXRayTrainer:
     def _calculate_metrics(
         self, targets_list: list, preds_list: list
     ) -> dict[str, float | list]:
-        # Convert predictions to binary (0/1) using 0.5 threshold
-        preds_binary = (np.array(preds_list) > 0.5).astype(int)
+        # Convert lists to numpy arrays first
+        preds = np.array(preds_list)
         targets = np.array(targets_list)
 
-        # For multilabel data, calculate confusion matrix for each label
-        n_classes = targets.shape[1]  # Number of classes/labels
-        confusion_matrices = []
+        # Convert predictions to binary (0/1) using 0.5 threshold
+        preds_binary = (preds > 0.5).astype(int)
+
+        # Calculate per-class metrics
+        n_classes = targets.shape[1]  # 14 categories
+        per_class_metrics = {}
 
         for i in range(n_classes):
+            class_metrics = {
+                f"class_{i}_accuracy": accuracy_score(
+                    targets[:, i], preds_binary[:, i]
+                ),
+                f"class_{i}_precision": precision_score(
+                    targets[:, i], preds_binary[:, i], zero_division=0
+                ),
+                f"class_{i}_recall": recall_score(
+                    targets[:, i], preds_binary[:, i], zero_division=0
+                ),
+                f"class_{i}_f1": f1_score(
+                    targets[:, i], preds_binary[:, i], zero_division=0
+                ),
+                f"class_{i}_auc": roc_auc_score(targets[:, i], preds[:, i]),
+            }
+            per_class_metrics.update(class_metrics)
 
-            # Each confusion matrix will show:
-            #
-            # True Negatives (TN) at position [0,0]
-            # False Positives (FP) at position [0,1]
-            # False Negatives (FN) at position [1,0]
-            # True Positives (TP) at position [1,1]
+        # Calculate overall metrics
+        # For multi-label classification, we use different averaging strategies
+        overall_metrics = {
+            "accuracy_subset": accuracy_score(
+                targets, preds_binary
+            ),  # Exact match accuracy
+            "hamming_loss": 1
+            - accuracy_score(
+                targets.ravel(), preds_binary.ravel()
+            ),  # Per-label accuracy
+            "precision_micro": precision_score(
+                targets, preds_binary, average="micro", zero_division=0
+            ),
+            "precision_macro": precision_score(
+                targets, preds_binary, average="macro", zero_division=0
+            ),
+            "recall_micro": recall_score(
+                targets, preds_binary, average="micro", zero_division=0
+            ),
+            "recall_macro": recall_score(
+                targets, preds_binary, average="macro", zero_division=0
+            ),
+            "f1_micro": f1_score(
+                targets, preds_binary, average="micro", zero_division=0
+            ),
+            "f1_macro": f1_score(
+                targets, preds_binary, average="macro", zero_division=0
+            ),
+            "roc_auc_micro": roc_auc_score(targets, preds, average="micro"),
+            "roc_auc_macro": roc_auc_score(targets, preds, average="macro"),
+        }
 
+        # Combine all metrics
+        metrics = {**overall_metrics, **per_class_metrics}
+
+        # Store confusion matrices separately to avoid cluttering metrics
+        confusion_matrices = []
+        for i in range(n_classes):
             cm = confusion_matrix(
                 targets[:, i], preds_binary[:, i], labels=[0, 1]
             ).tolist()
             confusion_matrices.append(cm)
 
-        return {
-            "accuracy": accuracy_score(targets, preds_binary),
-            "precision": precision_score(
-                targets, preds_binary, average="macro", zero_division=0
-            ),
-            "recall": recall_score(
-                targets, preds_binary, average="macro", zero_division=0
-            ),
-            "f1": f1_score(targets, preds_binary, average="macro", zero_division=0),
-            "roc_auc": roc_auc_score(targets, preds_list, average="macro"),
-            "confusion_matrices": confusion_matrices,
-        }
+        metrics["confusion_matrices"] = confusion_matrices
+
+        return metrics
 
     def train_one_epoch(self):
         self.model.train()
@@ -330,59 +371,49 @@ class ChestXRayTrainer:
                     self.scheduler.step(val_loss)
 
                 # Log metrics to MLflow
+                #
+                # train_loss and val_loss - Critical for monitoring model convergence
+                # train_accuracy and val_accuracy - Basic performance metric
+                # val_auc (ROC-AUC) - Particularly important for medical imaging tasks as it measures
+                # the model's ability to discriminate between classes regardless of threshold
+                # metrics_to_log = {
+                #     "train_loss": train_loss,
+                #     "val_loss": val_loss,
+                # }
+                #
+                # # Log all metrics except confusion matrices
+                # for metric_name, value in train_metrics.items():
+                #     if metric_name != "confusion_matrices":
+                #         metrics_to_log[f"train_{metric_name}"] = value
+                #
+                # for metric_name, value in val_metrics.items():
+                #     if metric_name != "confusion_matrices":
+                #         metrics_to_log[f"val_{metric_name}"] = value
+
+                # Log only key metrics matching logger.info output
                 mlflow.log_metrics(
                     {
-                        "train_loss": train_loss,
-                        "train_accuracy": train_metrics["accuracy"],
-                        "train_precision": train_metrics["precision"],
-                        "train_recall": train_metrics["recall"],
-                        "train_f1": train_metrics["f1"],
-                        "train_auc": train_metrics["roc_auc"],
-                        "val_loss": val_loss,
-                        "val_accuracy": val_metrics["accuracy"],
-                        "val_precision": val_metrics["precision"],
-                        "val_recall": val_metrics["recall"],
-                        "val_f1": val_metrics["f1"],
-                        "val_auc": val_metrics["roc_auc"],
+                        "train_accuracy_subset": train_metrics["accuracy_subset"],
+                        "train_f1_micro": train_metrics["f1_micro"],
+                        "val_accuracy_subset": val_metrics["accuracy_subset"],
+                        "val_f1_micro": val_metrics["f1_micro"],
+                        "val_roc_auc_micro": val_metrics["roc_auc_micro"],
                     },
                     step=epoch,
                 )
 
-                # Log confusion matrices as a separate artifact
-                mlflow.log_dict(
-                    {
-                        f"train_confusion_matrix_class_{i}": train_metrics[
-                            "confusion_matrices"
-                        ][i]
-                        for i in range(len(train_metrics["confusion_matrices"]))
-                    },
-                    f"train_confusion_matrices_epoch_{epoch}.json",
-                )
-
-                mlflow.log_dict(
-                    {
-                        f"val_confusion_matrix_class_{i}": val_metrics[
-                            "confusion_matrices"
-                        ][i]
-                        for i in range(len(val_metrics["confusion_matrices"]))
-                    },
-                    f"val_confusion_matrices_epoch_{epoch}.json",
-                )
-
+                # Log a more concise message but with key metrics
                 logger.info(
                     "Training epoch completed",
                     epoch=epoch + 1,
                     total_epochs=self.config.num_epochs,
                     train_loss=round(train_loss, 4),
-                    train_metrics={
-                        k: round(v, 4) if isinstance(v, float) else v
-                        for k, v in train_metrics.items()
-                    },
+                    train_accuracy_subset=round(train_metrics["accuracy_subset"], 4),
+                    train_f1_micro=round(train_metrics["f1_micro"], 4),
                     val_loss=round(val_loss, 4),
-                    val_metrics={
-                        k: round(v, 4) if isinstance(v, float) else v
-                        for k, v in val_metrics.items()
-                    },
+                    val_accuracy_subset=round(val_metrics["accuracy_subset"], 4),
+                    val_f1_micro=round(val_metrics["f1_micro"], 4),
+                    val_auc_micro=round(val_metrics["roc_auc_micro"], 4),
                 )
 
                 # Early Stopping
