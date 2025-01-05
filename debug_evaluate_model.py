@@ -42,8 +42,8 @@ def main():
 
     # DataModule
     data_module = ChestDataModule(train_config, path_config)
-    train_loader = data_module.train_dataloader()
-    val_loader = data_module.val_dataloader()
+    data_module.train_dataloader()
+    data_module.val_dataloader()
     test_loader = data_module.test_dataloader()
 
     loaded_model = load_best_model(

@@ -1,14 +1,12 @@
-import torch
+from typing import Any, Dict
 
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import confusion_matrix, classification_report, roc_auc_score
 import mlflow
-
-
-from typing import Dict, Any
+import numpy as np
 import numpy.typing as npt
+import seaborn as sns
+import torch
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
 
 class MetricsReporter:

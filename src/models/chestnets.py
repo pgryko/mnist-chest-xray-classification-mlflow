@@ -87,9 +87,10 @@ class ChestNetS(nn.Module):
         x = self.features(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
-        return torch.softmax(
-            x, dim=1
-        )  # Apply softmax for proper probability distribution
+        return torch.sigmoid(x)  # Apply sigmoid for multi-label classification
+        # return torch.softmax(
+        #     x, dim=1
+        # )  # Apply softmax for proper probability distribution
 
 
 class ResidualBlock(nn.Module):

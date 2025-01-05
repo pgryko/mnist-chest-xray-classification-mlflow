@@ -28,7 +28,7 @@ logger = structlog.get_logger()
 
 def main():
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=5)
+    train_config = TrainingConfig(num_epochs=500)
     path_config = PathConfig()
 
     # Prepare device
@@ -64,6 +64,7 @@ def main():
             "version": "1.0.0",
             "author": "pgryko",
             "final_activation": "softmax",
+            "modifications": "Long epochs 500",
         },
         experiment_description="""
     Training run for chest X-ray classification using ChestNetS architecture.

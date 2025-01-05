@@ -1,16 +1,15 @@
-import numpy as np
-from torch.utils.data import DataLoader
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from medmnist import ChestMNIST
-
-
-from numpy.typing import NDArray
-from PIL.Image import Image
-import torch
 from typing import Union
 
-from src.configs.config import TrainingConfig, PathConfig
+import albumentations as A
+import numpy as np
+import torch
+from albumentations.pytorch import ToTensorV2
+from medmnist import ChestMNIST
+from numpy.typing import NDArray
+from PIL.Image import Image
+from torch.utils.data import DataLoader
+
+from src.configs.config import PathConfig, TrainingConfig
 
 
 class ChestXRayTransforms:

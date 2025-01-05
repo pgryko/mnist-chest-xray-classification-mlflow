@@ -1,6 +1,6 @@
+import shap
 import torch
 from captum.attr import LayerGradCam
-import shap
 
 
 class ModelInterpreter:

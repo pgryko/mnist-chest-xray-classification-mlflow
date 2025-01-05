@@ -1,23 +1,21 @@
 # src/training/trainer.py
+import mlflow
+import mlflow.pytorch
 import numpy as np
+import structlog
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import mlflow
-import mlflow.pytorch
+from mlflow.models.signature import infer_signature
 from sklearn.metrics import (
-    roc_auc_score,
     accuracy_score,
+    confusion_matrix,
+    f1_score,
     precision_score,
     recall_score,
-    f1_score,
-    confusion_matrix,
+    roc_auc_score,
 )
-import structlog
-from mlflow.models.signature import infer_signature
-
-from torchinfo import summary, ModelStatistics
-
+from torchinfo import ModelStatistics, summary
 
 logger = structlog.get_logger()
 
@@ -80,67 +78,67 @@ class ChestXRayTrainer:
 
     """
     Metrics
-    
+
     Accuracy: Gives an overall picture of correct classifications, but may be misleading if classes are imbalanced.
-    
+
     Precision: Shows how many of the positive predictions were actually correct. In medical contexts, this indicates the reliability of positive diagnoses.
-    
+
     Recall: Shows how many actual positive cases were correctly identified. In medical contexts, this indicates how many actual cases of the condition were caught.
-    
+
     F1-score: Provides a balanced measure between precision and recall, which is especially useful when you need to find an optimal balance between false positives and false negatives.
-    
+
     Confusion Matrix: Gives a detailed breakdown of correct and incorrect predictions for each class, which is crucial for understanding the model's error patterns.
-    
+
     This enhanced metrics logging will provide a more comprehensive view of the model's performance, especially important in medical applications where understanding different types of errors is crucial. The metrics can be viewed in the MLflow UI and used to make informed decisions about model selection and threshold tuning.
-    
+
     For this specific chest X-ray classification task, these metrics are particularly relevant as they can help:
-    
+
     Evaluate if the model is biased towards certain predictions
     Understand the trade-off between false positives (unnecessary further testing) and false negatives (missed conditions)
     Compare different model architectures more comprehensively
     Make informed decisions about model deployment in clinical settings
-    
+
     AUC (Area Under the Curve) ROC (Receiver Operating Characteristic)
-    
+
     The ROC curve is a graphical representation of the trade-off between true positive rate (sensitivity) and false positive rate (1 - specificity) across different classification thresholds.
     AUC-ROC tells us:
-    
+
     Classification Quality
-    
+
     AUC ranges from 0 to 1 (0% to 100%)
     0.5 = random chance (like flipping a coin)
     1.0 = perfect classification
     < 0.5 = worse than random chance
     Threshold Independence
-    
+
     Unlike accuracy, precision, or F1-score, AUC evaluates the model's performance across ALL possible classification thresholds
     This is especially important in medical imaging where you might want to adjust the threshold based on the clinical context
     For example, you might want:
     Higher sensitivity (recall) for screening tests
     Higher specificity (fewer false positives) for confirmatory tests
     Interpretation in Chest X-Ray Context An AUC of 0.85 would mean:
-    
+
     If you randomly select one abnormal X-ray and one normal X-ray
     The model has an 85% chance of giving the abnormal X-ray a higher probability score than the normal one
     Looking at the code in trainer.py, we see two types of ROC AUC being calculated:
-    
+
     # The model outputs probabilities and they're used to calculate ROC AUC
     roc_auc = roc_auc_score(targets_list, preds_list)  # Using raw probabilities, not thresholded predictions
     Advantages of using AUC in this chest X-ray project:
-    
+
     Class Imbalance Handling
-    
+
     Medical datasets often have imbalanced classes (more normal cases than abnormal)
     AUC remains effective even with imbalanced datasets
     This is why the code uses raw probabilities (preds_list) instead of thresholded predictions
     Clinical Relevance
-    
+
     Helps clinicians understand trade-offs between:
     Sensitivity (catching all potential abnormalities)
     Specificity (minimizing false alarms)
     Allows for threshold adjustment based on clinical needs
     Model Comparison
-    
+
     The code logs AUC to MLflow for both training and validation:
     mlflow.log_metrics(
         {
@@ -151,26 +149,27 @@ class ChestXRayTrainer:
     )
     This makes it easier to compare different model architectures or training runs
     Performance Monitoring
-    
+
     The early stopping mechanism can use validation AUC to determine when to stop training
     Helps prevent overfitting while maintaining clinically relevant performance
     When interpreting the AUC values in this chest X-ray classification:
-    
+
     AUC > 0.90: Excellent discrimination
     AUC 0.80-0.90: Good discrimination
     AUC 0.70-0.80: Fair discrimination
     AUC < 0.70: Poor discrimination
     Looking at the evaluation code, the system calculates both macro and weighted AUC:
-    
+
     Macro AUC: Simple average across classes
     Weighted AUC: Average weighted by class frequency
-    This comprehensive evaluation helps ensure the model is reliable enough for potential clinical applications while 
+    This comprehensive evaluation helps ensure the model is reliable enough for potential clinical applications while
     providing flexibility in setting operating points based on specific clinical needs.
-    
+
     """
 
     def log_model_summary(self):
-        # Use torchinfo instead of torchsummary as its newer and supports mac GPUS
+        # Use torchinfo instead of torchsummary as its newer and supports mac
+        # GPUS
         model_stats: ModelStatistics = summary(
             self.model,
             input_size=(1, 1, 64, 64),  # (batch_size, channels, height, width)

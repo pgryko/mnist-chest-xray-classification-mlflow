@@ -1,7 +1,8 @@
+import os
 from dataclasses import dataclass, field
 from typing import List
+
 from decouple import config
-import os
 
 
 @dataclass
