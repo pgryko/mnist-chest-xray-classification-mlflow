@@ -2,7 +2,7 @@ import mlflow
 import torch
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
-from src.models.chestnets import ChestNetS
+from src.models.chestnets import ChestNetS, ChestNetM, ChestNetL
 from src.training.trainer import ChestXRayTrainer
 from src.interpretability.evaluation import MetricsReporter, evaluate_model
 
@@ -27,7 +27,7 @@ logger = structlog.get_logger()
 
 def main():
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=10)
+    train_config = TrainingConfig(num_epochs=50)
     path_config = PathConfig()
 
     # Prepare device
@@ -46,7 +46,11 @@ def main():
     test_loader = data_module.test_dataloader()
 
     # Choose model
-    model = ChestNetS().to(device)
+    # model = ChestNetS().to(device)
+
+    model = ChestNetM().to(device)
+
+    # model = ChestNetL().to(device)
 
     # Trainer
     trainer = ChestXRayTrainer(
@@ -57,13 +61,13 @@ def main():
         config=train_config,
         mlflow_tracking_uri=path_config.mlflow_tracking_uri,
         experiment_tags={
-            "model_type": "ChestNetS",
+            "model_type": model.model_name,
             "dataset": "ChestMNIST",
             "purpose": "production",
             "version": "1.0.0",
             "author": "pgryko",
             "final_activation": "sigmoid",
-            "modifications": "Long epochs 500",
+            "modifications": "Without transforms",
         },
         experiment_description="""
     Training run for chest X-ray classification using ChestNetS architecture.

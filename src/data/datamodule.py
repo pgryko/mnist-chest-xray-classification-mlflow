@@ -24,17 +24,17 @@ class ChestXRayTransforms:
             self.transform = A.Compose(
                 [
                     # A.Resize(64, 64),
-                    A.RandomRotate90(p=0.5),
-                    A.VerticalFlip(p=0.5),
-                    A.ShiftScaleRotate(
-                        shift_limit=0.1,
-                        scale_limit=0.1,
-                        rotate_limit=rotate_limit,
-                        p=0.5,
-                    ),
-                    A.RandomBrightnessContrast(
-                        brightness_limit=brightness, contrast_limit=contrast, p=0.2
-                    ),
+                    # A.RandomRotate90(p=0.5),
+                    # A.VerticalFlip(p=0.5),
+                    # A.ShiftScaleRotate(
+                    #     shift_limit=0.1,
+                    #     scale_limit=0.1,
+                    #     rotate_limit=rotate_limit,
+                    #     p=0.5,
+                    # ),
+                    # A.RandomBrightnessContrast(
+                    #     brightness_limit=brightness, contrast_limit=contrast, p=0.2
+                    # ),
                     A.Normalize(mean=[0.5], std=[0.5]),
                     ToTensorV2(),
                 ]
