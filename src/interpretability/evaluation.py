@@ -87,64 +87,40 @@ class MetricsReporter:
         plt.tight_layout()
         return plt.gcf()
 
-    # def log_to_mlflow(self):
-    #     """Log metrics to MLflow for both binary and multi-class cases."""
-    #     is_multiclass = "macro_roc_auc" in self.metrics
-    #
-    #     if is_multiclass:
-    #         # Log multi-class metrics
-    #         mlflow.log_metric("macro_roc_auc", self.metrics["macro_roc_auc"])
-    #         mlflow.log_metric("weighted_roc_auc", self.metrics["weighted_roc_auc"])
-    #     else:
-    #         # Log binary metrics
-    #         mlflow.log_metric("roc_auc", self.metrics["roc_auc"])
-    #
-    #     # Log classification report metrics
-    #     report = self.metrics["classification_report"]
-    #     mlflow.log_metric("accuracy", report["accuracy"])
-    #
-    #     # Log per-class metrics
-    #     report = self.metrics["classification_report"]
-    #     for i, class_label in enumerate(report.keys()):
-    #         if class_label in ["accuracy", "macro avg", "weighted avg"]:
-    #             continue
-    #         class_metrics = report[class_label]
-    #         class_name = (
-    #             self.class_names[int(class_label)]
-    #             if i < len(self.class_names)
-    #             else class_label
-    #         )
-    #         mlflow.log_metric(f"precision_{class_name}", class_metrics["precision"])
-    #         mlflow.log_metric(f"recall_{class_name}", class_metrics["recall"])
-    #         mlflow.log_metric(f"f1_score_{class_name}", class_metrics["f1-score"])
-    #         mlflow.log_metric(f"support_{class_name}", class_metrics["support"])
-    #
-    #     # Log macro and weighted averages
-    #     for avg_type in ["macro avg", "weighted avg"]:
-    #         avg_metrics = report[avg_type]
-    #         prefix = avg_type.replace(" ", "_")
-    #         mlflow.log_metric(f"{prefix}_precision", avg_metrics["precision"])
-    #         mlflow.log_metric(f"{prefix}_recall", avg_metrics["recall"])
-    #         mlflow.log_metric(f"{prefix}_f1_score", avg_metrics["f1-score"])
-    #
-    #     # Log confusion matrix plot
-    #     cm_fig = self.plot_confusion_matrix()
-    #     mlflow.log_figure(cm_fig, "confusion_matrix.png")
-    #     plt.close()  # Close the figure to free memory
-
     def log_to_mlflow(self):
         """Log metrics to MLflow for both binary and multi-class cases."""
         is_multiclass = "macro_roc_auc" in self.metrics
 
-        if is_multiclass:
-            mlflow.log_metric("macro_roc_auc", self.metrics["macro_roc_auc"])
-            mlflow.log_metric("weighted_roc_auc", self.metrics["weighted_roc_auc"])
-        else:
-            mlflow.log_metric("roc_auc", self.metrics["roc_auc"])
+        summary_metrics = {}
 
-        # Log accuracy
+        if is_multiclass:
+            summary_metrics.update(
+                {
+                    "macro_roc_auc": self.metrics["macro_roc_auc"],
+                    "weighted_roc_auc": self.metrics["weighted_roc_auc"],
+                }
+            )
+        else:
+            summary_metrics["roc_auc"] = self.metrics["roc_auc"]
+
+        # Add accuracy to summary metrics
         report = self.metrics["classification_report"]
-        mlflow.log_metric("accuracy", report["accuracy"])
+        summary_metrics["accuracy"] = report["accuracy"]
+
+        # Log only summary metrics as MLflow metrics
+        mlflow.log_metrics(summary_metrics)
+
+        # Save detailed metrics as JSON artifact
+        detailed_metrics = {
+            "classification_report": self.metrics["classification_report"],
+            "averages": {
+                "macro_avg": report["macro avg"],
+                "weighted_avg": report["weighted avg"],
+            },
+        }
+
+        # Save detailed metrics as a JSON artifact
+        mlflow.log_dict(detailed_metrics, "detailed_metrics.json")
 
         # Create consolidated per-class metrics visualizations
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 16))
@@ -208,14 +184,6 @@ class MetricsReporter:
         plt.tight_layout()
         mlflow.log_figure(fig, "class_metrics.png")
         plt.close()
-
-        # Log macro and weighted averages
-        for avg_type in ["macro avg", "weighted avg"]:
-            avg_metrics = report[avg_type]
-            prefix = avg_type.replace(" ", "_")
-            mlflow.log_metric(f"{prefix}_precision", avg_metrics["precision"])
-            mlflow.log_metric(f"{prefix}_recall", avg_metrics["recall"])
-            mlflow.log_metric(f"{prefix}_f1_score", avg_metrics["f1-score"])
 
         # Log confusion matrix plot
         cm_fig = self.plot_confusion_matrix()

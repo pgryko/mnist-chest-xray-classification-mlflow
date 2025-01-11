@@ -2,7 +2,7 @@ import mlflow
 import torch
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule import ChestDataModule
-from src.models.chestnets import ChestNetS, ChestNetM, ChestNetL
+from src.models.chestnets import ChestNetS
 from src.training.trainer import ChestXRayTrainer
 from src.interpretability.evaluation import MetricsReporter, evaluate_model
 
@@ -46,9 +46,9 @@ def main():
     test_loader = data_module.test_dataloader()
 
     # Choose model
-    # model = ChestNetS().to(device)
+    model = ChestNetS().to(device)
 
-    model = ChestNetM().to(device)
+    # model = ChestNetM().to(device)
 
     # model = ChestNetL().to(device)
 
@@ -77,18 +77,27 @@ def main():
     """,
     )
 
+    # Train the model
     run_id = trainer.train_model()
 
-    # Evaluate on the test set
-    y_true, y_prob = evaluate_model(model, test_loader, device)
+    # Evaluate on the test set in a separate run
+    with mlflow.start_run(
+        run_name="final_evaluation",
+        tags={"evaluation_type": "test", "parent_run": run_id},
+    ):
+        y_true, y_prob = evaluate_model(model, test_loader, device)
 
-    # Generate final metrics using same run
-    with mlflow.start_run(run_id=run_id):
         reporter = MetricsReporter()
         reporter.calculate_metrics(y_true, y_prob)
         reporter.log_to_mlflow()
 
-        logger.info("Test metrics:", reporter.metrics)
+        logger.info(
+            "Test evaluation completed",
+            accuracy=reporter.metrics["classification_report"]["accuracy"],
+            macro_avg_f1=reporter.metrics["classification_report"]["macro avg"][
+                "f1-score"
+            ],
+        )
 
 
 if __name__ == "__main__":
