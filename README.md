@@ -1,4 +1,4 @@
-# Chest X-Ray Classification using Deep Learning
+# Chest X-Ray Classification using Deep Learning and MLFLOW
 
 ## Project Overview
 This project implements a deep learning solution for binary classification of chest X-rays using the ChestMNIST dataset from MedMNIST. The system includes custom CNN architectures, transfer learning approaches, and extensive model interpretability features.
