@@ -1,5 +1,8 @@
 from typing import Tuple
+
+import mlflow
 import pytorch_lightning as pl
+import structlog
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,8 +10,12 @@ from torchmetrics.classification import (
     MultilabelAccuracy,
     MultilabelF1Score,
     MultilabelAUROC,
+    MultilabelPrecision,
 )
 from torchmetrics import MetricCollection
+import torchvision.models as models
+
+logger = structlog.get_logger()
 
 
 class ChestNetBase(pl.LightningModule):
@@ -27,6 +34,9 @@ class ChestNetBase(pl.LightningModule):
         self.train_metrics = MetricCollection(
             {
                 "accuracy": MultilabelAccuracy(num_labels=num_classes, average="micro"),
+                "precision": MultilabelPrecision(
+                    num_labels=num_classes, average="micro"
+                ),
                 "f1_score": MultilabelF1Score(num_labels=num_classes, average="micro"),
             }
         )
@@ -34,8 +44,11 @@ class ChestNetBase(pl.LightningModule):
         self.val_metrics = MetricCollection(
             {
                 "accuracy": MultilabelAccuracy(num_labels=num_classes, average="micro"),
+                "precision": MultilabelPrecision(
+                    num_labels=num_classes, average="micro"
+                ),
                 "f1_score": MultilabelF1Score(num_labels=num_classes, average="micro"),
-                "auroc": MultilabelAUROC(num_labels=num_classes),
+                # "auroc": MultilabelAUROC(num_labels=num_classes), # very computationally expensive, slow to calculate
             }
         )
 
@@ -58,15 +71,29 @@ class ChestNetBase(pl.LightningModule):
             },
         }
 
+    # def on_train_start(self):
+    #     # Log custom information at start of training
+    #     mlflow.log_params(
+    #         {
+    #             "data_transforms": str(self.trainer.datamodule.transform),
+    #             "custom_architecture": "ChestNetS",
+    #         }
+    #     )
+
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, y = batch
         y_hat = self(x)
-        loss = F.binary_cross_entropy(y_hat, y.float())
+
+        #  BCEWithLogitsLoss often yields numerical stability and is the recommended pattern for multi-label classification.
+        # Use BCEWithLogitsLoss
+        loss = F.binary_cross_entropy_with_logits(y_hat, y.float())
 
         # Update and log metrics
-        metrics = self.train_metrics(y_hat, y)
+        metrics = self.train_metrics(
+            torch.sigmoid(y_hat), y
+        )  # apply sigmoid for metrics
         self.log_dict(
             {f"train_{k}": v for k, v in metrics.items()},
             on_step=False,
@@ -75,17 +102,31 @@ class ChestNetBase(pl.LightningModule):
         )
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 
+        # Log custom metrics that autolog doesn't capture
+        # if self.trainer.is_last_batch:
+        #     mlflow.log_metrics({
+        #         "custom_metric": some_value,
+        #         "batch_specific_metric": another_value
+        #     })
+
         return loss
 
     def validation_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> None:
         x, y = batch
+
+        if batch_idx == 0:  # Only log once
+            logger.info(f"Input tensor device: {x.device}")
+            logger.info(f"Model device: {next(self.parameters()).device}")
+            logger.info(f"Current batch size: {x.shape[0]}")
+
         y_hat = self(x)
-        loss = F.binary_cross_entropy(y_hat, y.float())
+        loss = F.binary_cross_entropy_with_logits(y_hat, y.float())
 
         # Update and log metrics
-        metrics = self.val_metrics(y_hat, y)
+        metrics = self.val_metrics(torch.sigmoid(y_hat), y)
+
         self.log_dict(
             {f"val_{k}": v for k, v in metrics.items()},
             on_step=False,
@@ -101,7 +142,7 @@ class ChestNetBase(pl.LightningModule):
         y_hat = self(x)
 
         # Update and log metrics
-        metrics = self.test_metrics(y_hat, y)
+        metrics = self.test_metrics(torch.sigmoid(y_hat), y)
         self.log_dict(
             {f"test_{k}": v for k, v in metrics.items()},
             on_step=False,
@@ -120,9 +161,12 @@ class ChestNetS(ChestNetBase):
             "initial_filters": 32,
             "max_filters": 128,
             "dropout_rate": 0.5,
-            "final_activation": "sigmoid",
+            "final_activation": "logits",  # changed from 'sigmoid'
             "num_classes": 14,
         }
+
+        # Log custom information that autolog might miss
+        # mlflow.log_dict(self.model_details, "model_details.json")
 
         self.features = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
@@ -147,7 +191,7 @@ class ChestNetS(ChestNetBase):
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
             nn.Linear(512, 14),
-            nn.Sigmoid(),  # Apply sigmoid for multi-label classification or softmax for proper probability distribution
+            # nn.Sigmoid(),  # Apply sigmoid for multi-label classification or softmax for proper probability distribution
         )
 
     def forward(self, x):
@@ -155,3 +199,15 @@ class ChestNetS(ChestNetBase):
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
+
+
+class ChestNetResnet(pl.LightningModule):
+    def __init__(self, num_classes=14, pretrained=True, **kwargs):
+        super().__init__()
+        self.backbone = models.resnet18(pretrained=pretrained)
+        # Modify the first conv to accept 1 channel
+        self.backbone.conv1 = nn.Conv2d(
+            1, 64, kernel_size=7, stride=2, padding=3, bias=False
+        )
+        # Replace final layer
+        self.backbone.fc = nn.Linear(512, num_classes)

@@ -12,13 +12,15 @@ from medmnist import INFO
 
 
 class MetricsReporter:
-    def __init__(self, class_names=None) -> None:
-        if class_names is None:
-            chest_info = INFO["chestmnist"]
-            class_names = [chest_info["label"][str(i)] for i in range(14)]
+    def __init__(self) -> None:
+        chest_info = INFO["chestmnist"]
+        no_of_categories = len(chest_info["label"])
+        class_names = [chest_info["label"][str(i)] for i in range(no_of_categories)]
         self.metrics: Dict[str, Any] = {}
         self.class_names = (
-            class_names if class_names is not None else [str(i) for i in range(14)]
+            class_names
+            if class_names is not None
+            else [str(i) for i in range(no_of_categories)]
         )
 
     def calculate_metrics(

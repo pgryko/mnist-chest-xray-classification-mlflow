@@ -1,4 +1,6 @@
 # src/training/trainer.py
+import time
+
 import mlflow
 import mlflow.pytorch
 import numpy as np
@@ -363,32 +365,20 @@ class ChestXRayTrainer:
             self.log_model_summary()
 
             for epoch in range(self.config.num_epochs):
+                epoch_start_time = time.time()
+
                 train_loss, train_metrics = self.train_one_epoch()
+                train_epoch_time = time.time() - epoch_start_time
+
                 val_loss, val_metrics = self.validate_one_epoch()
+
+                epoch_time = time.time() - epoch_start_time
+
+                validation_epoch_time = epoch_time - train_epoch_time
 
                 # Update learning rate
                 if self.scheduler:
                     self.scheduler.step(val_loss)
-
-                # Log metrics to MLflow
-                #
-                # train_loss and val_loss - Critical for monitoring model convergence
-                # train_accuracy and val_accuracy - Basic performance metric
-                # val_auc (ROC-AUC) - Particularly important for medical imaging tasks as it measures
-                # the model's ability to discriminate between classes regardless of threshold
-                # metrics_to_log = {
-                #     "train_loss": train_loss,
-                #     "val_loss": val_loss,
-                # }
-                #
-                # # Log all metrics except confusion matrices
-                # for metric_name, value in train_metrics.items():
-                #     if metric_name != "confusion_matrices":
-                #         metrics_to_log[f"train_{metric_name}"] = value
-                #
-                # for metric_name, value in val_metrics.items():
-                #     if metric_name != "confusion_matrices":
-                #         metrics_to_log[f"val_{metric_name}"] = value
 
                 # Log only key metrics matching logger.info output
                 mlflow.log_metrics(
@@ -414,6 +404,9 @@ class ChestXRayTrainer:
                     val_accuracy_subset=round(val_metrics["accuracy_subset"], 4),
                     val_f1_micro=round(val_metrics["f1_micro"], 4),
                     val_auc_micro=round(val_metrics["roc_auc_micro"], 4),
+                    epoch_time_minutes=round(epoch_time / 60, 2),
+                    validation_epoch_time_minutes=round(validation_epoch_time / 60, 2),
+                    train_epoch_time_minutes=round(train_epoch_time / 60, 2),
                 )
 
                 # Early Stopping
