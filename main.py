@@ -48,10 +48,6 @@ def main():
     # Choose model
     model = ChestNetS().to(device)
 
-    # model = ChestNetM().to(device)
-
-    # model = ChestNetL().to(device)
-
     # Trainer
     trainer = ChestXRayTrainer(
         model=model,

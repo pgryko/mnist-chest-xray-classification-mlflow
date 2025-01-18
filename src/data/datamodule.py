@@ -1,4 +1,5 @@
 from typing import Union
+import pytorch_lightning as pl
 
 import albumentations as A
 import numpy as np
@@ -53,39 +54,106 @@ class ChestXRayTransforms:
         return self.transform(image=np.array(img))["image"]
 
 
-class ChestDataModule:
+# class ChestDataModule:
+#     def __init__(self, config: TrainingConfig, paths: PathConfig):
+#         self.config = config
+#         self.paths = paths
+#
+#         self.train_dataset = ChestMNIST(
+#             split="train",
+#             root=self.paths.dataset_root,
+#             download=True,
+#             transform=ChestXRayTransforms(
+#                 is_training=True,
+#                 rotate_limit=self.config.rotate_limit,
+#                 brightness=self.config.brightness,
+#                 contrast=self.config.contrast,
+#             ),
+#             size=64,
+#         )
+#
+#         self.val_dataset = ChestMNIST(
+#             split="val",
+#             root=self.paths.dataset_root,
+#             download=True,
+#             transform=ChestXRayTransforms(is_training=False),
+#             size=64,
+#         )
+#
+#         self.test_dataset = ChestMNIST(
+#             split="test",
+#             root=self.paths.dataset_root,
+#             download=True,
+#             transform=ChestXRayTransforms(is_training=False),
+#             size=64,
+#         )
+#
+#     def train_dataloader(self):
+#         return DataLoader(
+#             self.train_dataset,
+#             batch_size=self.config.batch_size,
+#             shuffle=True,
+#             num_workers=4,
+#         )
+#
+#     def val_dataloader(self):
+#         return DataLoader(
+#             self.val_dataset,
+#             batch_size=self.config.batch_size,
+#             shuffle=False,
+#             num_workers=4,
+#         )
+#
+#     def test_dataloader(self):
+#         return DataLoader(
+#             self.test_dataset,
+#             batch_size=self.config.batch_size,
+#             shuffle=False,
+#             num_workers=4,
+#         )
+
+
+class ChestDataModule(pl.LightningDataModule):
     def __init__(self, config: TrainingConfig, paths: PathConfig):
+        super().__init__()
         self.config = config
         self.paths = paths
+        self.train_dataset = None
+        self.val_dataset = None
+        self.test_dataset = None
 
-        self.train_dataset = ChestMNIST(
-            split="train",
-            root=self.paths.dataset_root,
-            download=True,
-            transform=ChestXRayTransforms(
-                is_training=True,
-                rotate_limit=self.config.rotate_limit,
-                brightness=self.config.brightness,
-                contrast=self.config.contrast,
-            ),
-            size=64,
-        )
+    def setup(self, stage: str = None):
+        """Setup datasets for each stage of training."""
+        if stage == "fit" or stage is None:
+            self.train_dataset = ChestMNIST(
+                split="train",
+                root=self.paths.dataset_root,
+                download=True,
+                transform=ChestXRayTransforms(
+                    is_training=True,
+                    rotate_limit=self.config.rotate_limit,
+                    brightness=self.config.brightness,
+                    contrast=self.config.contrast,
+                ),
+                size=64,
+            )
 
-        self.val_dataset = ChestMNIST(
-            split="val",
-            root=self.paths.dataset_root,
-            download=True,
-            transform=ChestXRayTransforms(is_training=False),
-            size=64,
-        )
+            self.val_dataset = ChestMNIST(
+                split="val",
+                root=self.paths.dataset_root,
+                download=True,
+                transform=ChestXRayTransforms(is_training=False),
+                size=64,
+            )
 
-        self.test_dataset = ChestMNIST(
-            split="test",
-            root=self.paths.dataset_root,
-            download=True,
-            transform=ChestXRayTransforms(is_training=False),
-            size=64,
-        )
+        if stage == "test" or stage is None:
+            self.test_dataset = ChestMNIST(
+                split="test",
+                root=self.paths.dataset_root,
+                download=True,
+                transform=ChestXRayTransforms(is_training=False),
+                size=64,
+            )
 
     def train_dataloader(self):
         return DataLoader(
