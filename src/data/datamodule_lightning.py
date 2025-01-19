@@ -110,7 +110,7 @@ class ChestDataModuleLightning(pl.LightningDataModule):
             self.val_dataset,
             batch_size=self.config.batch_size,
             shuffle=False,
-            num_workers=min(8, os.cpu_count()),  # Increase workers
+            num_workers=min(8, os.cpu_count()),
             pin_memory=True,  # For GPU training
             persistent_workers=True,  # Keep workers alive between epochs
             prefetch_factor=4,  # Prefetch data

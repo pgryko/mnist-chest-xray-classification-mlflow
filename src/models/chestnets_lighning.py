@@ -1,21 +1,93 @@
-from typing import Tuple
+from typing import Tuple, Any
 
 import mlflow
+from torchviz import make_dot
+
 import pytorch_lightning as pl
 import structlog
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
+from torchinfo import ModelStatistics, summary
 from torchmetrics.classification import (
     MultilabelAccuracy,
     MultilabelF1Score,
-    MultilabelAUROC,
     MultilabelPrecision,
 )
 from torchmetrics import MetricCollection
-import torchvision.models as models
+
+from src.configs.config import TrainingConfig
 
 logger = structlog.get_logger()
+
+
+def log_model_summary(
+    model: nn.Module,
+    config: TrainingConfig,
+    input_size: tuple = (1, 1, 64, 64),
+) -> ModelStatistics:
+    """
+    Generate and log model summary information using torchinfo and MLflow.
+
+    Args:
+        model: The PyTorch model to analyze
+        config: Training configuration parameters
+        logger: Logger instance for logging information
+        input_size: Input tensor size for model summary (batch_size, channels, height, width)
+
+    Returns:
+        ModelStatistics: The generated model statistics
+    """
+    # Generate model summary
+    model_stats: ModelStatistics = summary(
+        model,
+        input_size=input_size,
+        col_names=[
+            "input_size",
+            "output_size",
+            "num_params",
+            "kernel_size",
+            "mult_adds",
+        ],
+        col_width=20,
+        row_settings=["var_names"],
+        verbose=True,
+    )
+
+    logger.info("Model Summary", model_stats=model_stats)
+
+    # Log model details and summary
+    mlflow.log_param("model_name", model.model_name)
+    mlflow.log_dict(model.model_details, "model_details.json")
+    mlflow.log_text(str(model_stats), "model_summary.txt")
+
+    if model_stats:
+        model_params = {
+            "total_params": model_stats.total_params,
+            "trainable_params": model_stats.trainable_params,
+            "non_trainable_params": model_stats.total_params
+            - model_stats.trainable_params,
+        }
+        mlflow.log_params(model_params)
+
+    # Log training hyperparameters
+    training_params = {
+        "model_name": model.__class__.__name__,
+        "lr": config.learning_rate,
+        "batch_size": config.batch_size,
+        "num_epochs": config.num_epochs,
+        "weight_decay": config.weight_decay,
+    }
+    mlflow.log_params(training_params)
+
+    sample_input = torch.randn(1, 1, 64, 64).to(next(model.parameters()).device)
+    y = model(sample_input)
+    dot = make_dot(y, params=dict(model.named_parameters()))
+    dot.render("model_architecture", format="png")
+    mlflow.log_artifact("model_architecture.png")
+
+    return model_stats
 
 
 class ChestNetBase(pl.LightningModule):
@@ -71,14 +143,18 @@ class ChestNetBase(pl.LightningModule):
             },
         }
 
-    # def on_train_start(self):
-    #     # Log custom information at start of training
-    #     mlflow.log_params(
-    #         {
-    #             "data_transforms": str(self.trainer.datamodule.transform),
-    #             "custom_architecture": "ChestNetS",
-    #         }
-    #     )
+    def on_train_start(self):
+        # Log custom information at start of training
+        # mlflow.log_params(
+        #     {
+        #         "data_transforms": str(self.trainer.datamodule.transform),
+        #         "custom_architecture": "ChestNetS",
+        #     }
+        # )
+
+        print("on_train_start")
+
+        # log_model_summary(self, self.hparams)
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -104,10 +180,9 @@ class ChestNetBase(pl.LightningModule):
 
         # Log custom metrics that autolog doesn't capture
         # if self.trainer.is_last_batch:
-        #     mlflow.log_metrics({
-        #         "custom_metric": some_value,
-        #         "batch_specific_metric": another_value
-        #     })
+        #     mlflow.log_metrics(
+        #         {"custom_metric": some_value, "batch_specific_metric": another_value}
+        #     )
 
         return loss
 
@@ -137,7 +212,7 @@ class ChestNetBase(pl.LightningModule):
 
     def test_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> None:
+    ) -> dict[str, Tensor | Any]:
         x, y = batch
         y_hat = self(x)
 
@@ -148,6 +223,7 @@ class ChestNetBase(pl.LightningModule):
             on_step=False,
             on_epoch=True,
         )
+        return {"logits": y_hat, "labels": y}
 
 
 class ChestNetS(ChestNetBase):
@@ -199,15 +275,3 @@ class ChestNetS(ChestNetBase):
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
-
-
-class ChestNetResnet(pl.LightningModule):
-    def __init__(self, num_classes=14, pretrained=True, **kwargs):
-        super().__init__()
-        self.backbone = models.resnet18(pretrained=pretrained)
-        # Modify the first conv to accept 1 channel
-        self.backbone.conv1 = nn.Conv2d(
-            1, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )
-        # Replace final layer
-        self.backbone.fc = nn.Linear(512, num_classes)

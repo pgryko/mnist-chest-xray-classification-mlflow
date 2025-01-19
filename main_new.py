@@ -42,7 +42,8 @@ class MetricsLoggingCallback(pl.Callback):
         """Called after each test batch.
         `outputs` is whatever your `test_step` returns (e.g. logits, labels)."""
         if outputs is not None:
-            logits, labels = outputs
+            logits = outputs["logits"]
+            labels = outputs["labels"]
             self.all_preds.append(logits.cpu().numpy())
             self.all_labels.append(labels.cpu().numpy())
 
@@ -54,9 +55,23 @@ class MetricsLoggingCallback(pl.Callback):
         # Convert logits to probability
         y_pred_proba = sigmoid(all_preds)
 
-        reporter = MetricsReporter()
-        reporter.calculate_metrics(all_labels, y_pred_proba)
-        reporter.log_to_mlflow()
+        # Make sure we do NOT start a brand new MLflow run
+        # Instead, use the trainer's logger run if it's still open:
+        mlflow.set_tracking_uri(trainer.logger.experiment.tracking_uri)
+        run_id = trainer.logger.run_id
+
+        # If the run is still active, no need to re-start. If it is closed, you can nest:
+        if mlflow.active_run() is None:
+            with mlflow.start_run(run_id=run_id):
+
+                reporter = MetricsReporter()
+                reporter.calculate_metrics(all_labels, y_pred_proba)
+                reporter.log_to_mlflow()
+
+        else:
+            reporter = MetricsReporter()
+            reporter.calculate_metrics(all_labels, y_pred_proba)
+            reporter.log_to_mlflow()
 
         # Optionally clear the buffers
         self.all_preds = []
@@ -65,20 +80,10 @@ class MetricsLoggingCallback(pl.Callback):
 
 def main():
 
-    # Enable autologging
-    mlflow.pytorch.autolog(
-        log_every_n_epoch=1,  # Log metrics every epoch
-        log_models=True,  # Log model checkpoints
-        disable=False,  # Enable autologging
-        exclusive=False,  # Allow manual logging alongside autologging
-        disable_for_unsupported_versions=False,
-        silent=False,  # Print logging info to stdout
-    )
-
     torch.set_float32_matmul_precision("medium")
 
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=1)
+    train_config = TrainingConfig(num_epochs=3)
     path_config = PathConfig()
 
     # Create data module
@@ -94,7 +99,7 @@ def main():
         monitor="val_loss",
         dirpath="checkpoints",
         filename="{epoch:02d}-{val_loss:.2f}",
-        save_top_k=3,
+        save_top_k=1,
         mode="min",
     )
 
@@ -105,60 +110,71 @@ def main():
     mlflow.set_tracking_uri(path_config.mlflow_tracking_uri)
 
     # Let MLFlowLogger Handle the Experiment
-    mlf_logger = MLFlowLogger(
-        tracking_uri=path_config.mlflow_tracking_uri,
-        experiment_name="ChestXRayPytorchLightning",
-        run_name="Test post training charts",
-        tags={
-            "model_type": model.model_name,
-            "dataset": "ChestMNIST",
-            "purpose": "production",
-            "version": "1.0.0",
-            "author": "pgryko",
-            "final_activation": "sigmoid",
-            "modifications": "Without transforms",
-        },
-        log_model=True,
-    )
+    with mlflow.start_run(
+        run_name="figuring out logging, checkpoint_callback, autologging disabled"
+    ) as run:
+        # Enable autologging
+        # mlflow.pytorch.autolog(
+        #     log_every_n_epoch=1,  # Log metrics every epoch
+        #     # log_models=True,  # Log model checkpoints
+        #     disable=False,  # Enable autologging
+        #     exclusive=False,  # Allow manual logging alongside autologging
+        #     disable_for_unsupported_versions=False,
+        #     silent=False,  # Print logging info to stdout
+        # )
 
-    mlflow.pytorch.autolog()
+        mlf_logger = MLFlowLogger(
+            tracking_uri=path_config.mlflow_tracking_uri,
+            experiment_name="ChestXRayPytorchLightning",
+            log_model=True,
+            run_id=run.info.run_id,
+            tags={
+                "model_type": model.model_name,
+                "dataset": "ChestMNIST",
+                "purpose": "production",
+                "version": "1.0.0",
+                "author": "pgryko",
+                "final_activation": "logits",
+                "modifications": "Without transforms",
+            },
+        )
 
-    class NoValProgressBar(TQDMProgressBar):
-        def init_validation_tqdm(self):
-            # Return a disabled progress bar for validation
-            bar = super().init_validation_tqdm()
-            bar.disable = True
-            return bar
+        class NoValProgressBar(TQDMProgressBar):
+            def init_validation_tqdm(self):
+                # Return a disabled progress bar for validation
+                bar = super().init_validation_tqdm()
+                bar.disable = True
+                return bar
 
-    # Initialize trainer
-    trainer = pl.Trainer(
-        max_epochs=train_config.num_epochs,
-        accelerator="gpu",
-        devices=1,
-        logger=mlf_logger,
-        callbacks=[
-            checkpoint_callback,
-            early_stop_callback,
-            NoValProgressBar(refresh_rate=10),
-            MetricsLoggingCallback(),
-        ],
-        precision=16,
-        # profiler="simple",
-        enable_model_summary=True,
-    )
+        # Initialize trainer
+        trainer = pl.Trainer(
+            max_epochs=train_config.num_epochs,
+            accelerator="gpu",
+            devices=1,
+            logger=mlf_logger,
+            callbacks=[
+                # checkpoint_callback,
+                early_stop_callback,
+                NoValProgressBar(refresh_rate=10),
+                MetricsLoggingCallback(),
+            ],
+            precision=16,
+            # profiler="simple",
+            enable_model_summary=True,
+        )
 
-    # Train model
-    trainer.fit(model, data_module)
+        # Train model
+        trainer.fit(model, data_module)
 
-    # Test the model
-    test_results = trainer.test(model, data_module)
+        # Test the model
+        test_results = trainer.test(model, data_module)
 
-    # Log test metrics
-    logger.info("Test results", test_results=test_results)
+        # Log test metrics
+        logger.info("Test results", test_results=test_results)
 
-    mlflow.pytorch.log_model(
-        model, "model", registered_model_name="chest_xray_classifier"
-    )
+        mlflow.pytorch.log_model(
+            model, "model", registered_model_name="chest_xray_classifier"
+        )
 
 
 if __name__ == "__main__":

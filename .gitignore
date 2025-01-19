@@ -11,6 +11,9 @@ mlruns/**/*.json
 !mlruns/**/*.pt
 !mlruns/**/*.bin
 !mlruns/**/*.onnx
+mlartifacts/
+checkpoints/
+lightning_logs/
 
 # MLflow artifacts - similar rules
 mlartifacts/**/meta.yaml
