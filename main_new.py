@@ -3,7 +3,6 @@ from scipy.special import expit as sigmoid
 import mlflow
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.loggers import MLFlowLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, TQDMProgressBar
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule_lightning import ChestDataModuleLightning
@@ -11,7 +10,10 @@ from src.data.datamodule_lightning import ChestDataModuleLightning
 import structlog
 
 from src.interpretability.evaluation import MetricsReporter
-from src.models.chestnets_lighning import ChestNetS
+from src.models.chestnets_lighning import (
+    ChestNetDebug,
+    log_model_description,
+)
 
 structlog.configure(
     processors=[
@@ -57,21 +59,10 @@ class MetricsLoggingCallback(pl.Callback):
 
         # Make sure we do NOT start a brand new MLflow run
         # Instead, use the trainer's logger run if it's still open:
-        mlflow.set_tracking_uri(trainer.logger.experiment.tracking_uri)
-        run_id = trainer.logger.run_id
 
-        # If the run is still active, no need to re-start. If it is closed, you can nest:
-        if mlflow.active_run() is None:
-            with mlflow.start_run(run_id=run_id):
-
-                reporter = MetricsReporter()
-                reporter.calculate_metrics(all_labels, y_pred_proba)
-                reporter.log_to_mlflow()
-
-        else:
-            reporter = MetricsReporter()
-            reporter.calculate_metrics(all_labels, y_pred_proba)
-            reporter.log_to_mlflow()
+        reporter = MetricsReporter()
+        reporter.calculate_metrics(all_labels, y_pred_proba)
+        reporter.log_to_mlflow()
 
         # Optionally clear the buffers
         self.all_preds = []
@@ -90,7 +81,11 @@ def main():
     data_module = ChestDataModuleLightning(train_config, path_config)
 
     # Initialize model
-    model = ChestNetS(
+    # model = ChestNetS(
+    #     learning_rate=train_config.learning_rate, weight_decay=train_config.weight_decay
+    # )
+
+    model = ChestNetDebug(
         learning_rate=train_config.learning_rate, weight_decay=train_config.weight_decay
     )
 
@@ -109,35 +104,40 @@ def main():
 
     mlflow.set_tracking_uri(path_config.mlflow_tracking_uri)
 
+    mlflow.set_experiment("ChestXRayPytorchLightning")
+
     # Let MLFlowLogger Handle the Experiment
     with mlflow.start_run(
-        run_name="figuring out logging, checkpoint_callback, autologging disabled"
-    ) as run:
+        run_name="figuring out logging, checkpoint_callback, autologging disabled",
+        description="Debug: Training run for chest X-ray classification using ChestNetS architecture.",
+        tags={
+            "model_type": model.model_name,
+            "dataset": "ChestMNIST",
+            "purpose": "production",
+            "version": "1.0.0",
+            "author": "pgryko",
+            "final_activation": "logits",
+            "modifications": "Without transforms",
+        },
+    ):
         # Enable autologging
-        # mlflow.pytorch.autolog(
-        #     log_every_n_epoch=1,  # Log metrics every epoch
-        #     # log_models=True,  # Log model checkpoints
-        #     disable=False,  # Enable autologging
-        #     exclusive=False,  # Allow manual logging alongside autologging
-        #     disable_for_unsupported_versions=False,
-        #     silent=False,  # Print logging info to stdout
-        # )
-
-        mlf_logger = MLFlowLogger(
-            tracking_uri=path_config.mlflow_tracking_uri,
-            experiment_name="ChestXRayPytorchLightning",
-            log_model=True,
-            run_id=run.info.run_id,
-            tags={
-                "model_type": model.model_name,
-                "dataset": "ChestMNIST",
-                "purpose": "production",
-                "version": "1.0.0",
-                "author": "pgryko",
-                "final_activation": "logits",
-                "modifications": "Without transforms",
-            },
+        mlflow.pytorch.autolog(
+            log_every_n_epoch=1,  # Log metrics every epoch
+            # log_models=True,  # Log model checkpoints
+            disable=False,  # Enable autologging
+            exclusive=False,  # Allow manual logging alongside autologging
+            disable_for_unsupported_versions=False,
+            silent=False,  # Print logging info to stdout
         )
+
+        log_model_description(model=model, config=train_config)
+
+        # mlf_logger = MLFlowLogger(
+        #     tracking_uri=path_config.mlflow_tracking_uri,
+        #     experiment_name="ChestXRayPytorchLightning",
+        #     log_model=True,
+        #     run_id=run.info.run_id,
+        # )
 
         class NoValProgressBar(TQDMProgressBar):
             def init_validation_tqdm(self):
@@ -151,7 +151,7 @@ def main():
             max_epochs=train_config.num_epochs,
             accelerator="gpu",
             devices=1,
-            logger=mlf_logger,
+            # logger=mlf_logger,
             callbacks=[
                 # checkpoint_callback,
                 early_stop_callback,
@@ -172,9 +172,24 @@ def main():
         # Log test metrics
         logger.info("Test results", test_results=test_results)
 
-        mlflow.pytorch.log_model(
-            model, "model", registered_model_name="chest_xray_classifier"
-        )
+        # Get a sample batch from the validation set
+        val_batch = next(iter(data_module.val_dataloader()))
+        sample_inputs, sample_outputs = val_batch
+
+        # Convert to numpy and ensure correct shape
+        sample_inputs_np = sample_inputs.numpy()
+        sample_outputs_np = sample_outputs.numpy()
+
+        # # Log the model with the correct signature
+        # mlflow.pytorch.log_model(
+        #     model,
+        #     artifact_path="best_model",
+        #     signature=infer_signature(
+        #         sample_inputs_np,
+        #         sample_outputs_np,
+        #     ),
+        #     registered_model_name="chest_xray_classifier",
+        # )
 
 
 if __name__ == "__main__":

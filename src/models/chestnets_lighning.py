@@ -22,10 +22,66 @@ from src.configs.config import TrainingConfig
 logger = structlog.get_logger()
 
 
-def log_model_summary(
+def _calculate_output_shape(layers: nn.Sequential, input_channels: int) -> tuple:
+    """
+    Calculate the output shape after passing through a sequence of layers.
+    """
+    # Use 64x64 since that's the expected input size for the model
+    dummy_input = torch.zeros(1, input_channels, 64, 64)
+    x = dummy_input
+
+    with torch.no_grad():
+        for layer in layers:
+            if isinstance(layer, (nn.Conv2d, nn.MaxPool2d, nn.AvgPool2d)):
+                x = layer(x)
+
+    return x.shape[1:]
+
+
+def _infer_input_size(model: nn.Module) -> tuple:
+    """
+    Infer the required input size for the model based on its architecture.
+    """
+    # Find first conv layer to get input channels
+    first_layer = next((m for m in model.modules() if isinstance(m, nn.Conv2d)), None)
+    if not first_layer:
+        raise ValueError("Could not find a Conv2d layer in the model")
+
+    in_channels = first_layer.in_channels
+
+    # Find first linear layer to get required flattened input size
+    first_linear = next((m for m in model.modules() if isinstance(m, nn.Linear)), None)
+    if not first_linear:
+        raise ValueError("Could not find a Linear layer in the model")
+
+    required_features = first_linear.in_features
+
+    # Calculate the feature extractor's output shape
+    if not hasattr(model, "features"):
+        raise ValueError(
+            "Model must have a 'features' attribute containing the convolutional layers"
+        )
+
+    out_channels, out_height, out_width = _calculate_output_shape(
+        model.features, in_channels
+    )
+
+    # Verify that the output shape matches the linear layer's input
+    if out_channels * out_height * out_width != required_features:
+        raise ValueError(
+            f"Model architecture mismatch: feature output shape "
+            f"{out_channels}*{out_height}*{out_width} = {out_channels * out_height * out_width} "
+            f"doesn't match linear input features {required_features}"
+        )
+
+    # Return the expected input size (batch_size, channels, height, width)
+    return (1, in_channels, 64, 64)  # Fixed 64x64 input size
+
+
+def log_model_description(
     model: nn.Module,
     config: TrainingConfig,
-    input_size: tuple = (1, 1, 64, 64),
+    input_size: tuple = None,
 ) -> ModelStatistics:
     """
     Generate and log model summary information using torchinfo and MLflow.
@@ -33,12 +89,22 @@ def log_model_summary(
     Args:
         model: The PyTorch model to analyze
         config: Training configuration parameters
-        logger: Logger instance for logging information
-        input_size: Input tensor size for model summary (batch_size, channels, height, width)
+        input_size: Optional input tensor size. If None, will be inferred from model architecture.
 
     Returns:
         ModelStatistics: The generated model statistics
     """
+    if input_size is None:
+        input_size = _infer_input_size(model)
+        logger.info("Inferred input size", input_size=input_size)
+
+    # Validate input size matches model expectations
+    if input_size[1] != model.features[0].in_channels:
+        raise ValueError(
+            f"Input channels {input_size[1]} doesn't match model's "
+            f"expected input channels {model.features[0].in_channels}"
+        )
+
     # Generate model summary
     model_stats: ModelStatistics = summary(
         model,
@@ -268,6 +334,42 @@ class ChestNetS(ChestNetBase):
             nn.Dropout(0.5),
             nn.Linear(512, 14),
             # nn.Sigmoid(),  # Apply sigmoid for multi-label classification or softmax for proper probability distribution
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+
+class ChestNetDebug(ChestNetBase):
+    # Used for debugging/testing logging purposes
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.model_name = "ChestNetDebug"
+        self.model_details = {
+            "architecture": "Minimal CNN for debugging",
+            "input_channels": 1,
+            "conv_layers": 1,
+            "initial_filters": 16,
+            "max_filters": 16,
+            "dropout_rate": 0.2,
+            "final_activation": "logits",
+            "num_classes": 14,
+        }
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(4, 4),  # Aggressive pooling to reduce dimensions quickly
+        )
+
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.2),
+            nn.Linear(16 * 16 * 16, 64),  # Smaller dense layer
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 14),
         )
 
     def forward(self, x):
