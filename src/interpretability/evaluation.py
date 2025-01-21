@@ -43,136 +43,129 @@ class MetricsReporter:
         # Convert probabilities to binary predictions
         y_pred = (y_pred_proba >= threshold).astype(int)
 
-        self.y_true = y_true  # Store for later use
-        self.y_pred = (y_pred_proba >= threshold).astype(int)  # Store for later use
-
-        # Calculate metrics for each condition
-        self.metrics["per_condition"] = {}
-        self.metrics["confusion_matrices"] = (
-            {}
-        )  # New dictionary for per-class confusion matrices
-
-        # Add normal class metrics
-        normal_cases = np.all(y_true == 0, axis=1)
-        predicted_normal = np.all(y_pred == 0, axis=1)
-        normal_proba = 1 - np.max(y_pred_proba, axis=1)  # Probability of being normal
-
-        # Add normal to per_condition metrics
-        self.metrics["per_condition"]["Normal"] = {
-            "auc_roc": roc_auc_score(normal_cases, normal_proba),
-            "avg_precision": average_precision_score(normal_cases, normal_proba),
-            "support": int(np.sum(normal_cases)),
-            "precision": precision_recall_curve(normal_cases, normal_proba)[0],
-            "recall": precision_recall_curve(normal_cases, normal_proba)[1],
+        # Initialize metrics storage
+        self.metrics = {
+            "per_condition": {},
+            "confusion_matrices": {},
+            "overall": {},
+            "normal_detection": {},
         }
 
-        # Add normal to confusion matrices
-        self.metrics["confusion_matrices"]["Normal"] = confusion_matrix(
-            normal_cases, predicted_normal
-        )
+        # Calculate normal cases detection (all labels negative)
+        normal_true = np.all(y_true == 0, axis=1)
+        normal_pred = np.all(y_pred == 0, axis=1)
+
+        # Store normal detection metrics separately
+        self.metrics["normal_detection"] = {
+            "confusion_matrix": confusion_matrix(normal_true, normal_pred),
+            "classification_report": classification_report(
+                normal_true,
+                normal_pred,
+                target_names=["Any Disease", "Normal"],
+                output_dict=True,
+                zero_division=0,
+            ),
+            "auc_roc": roc_auc_score(normal_true, 1 - np.max(y_pred_proba, axis=1)),
+            "avg_precision": average_precision_score(
+                normal_true, 1 - np.max(y_pred_proba, axis=1)
+            ),
+        }
 
         # Add metrics for each condition including normal
         for idx, condition in enumerate(self.disease_names):
-            # For disease conditions
             condition_true = y_true[:, idx]
             condition_pred = y_pred[:, idx]
             condition_proba = y_pred_proba[:, idx]
 
-            # Calculate confusion matrix values
-            tn, fp, fn, tp = confusion_matrix(condition_true, condition_pred).ravel()
+            # Handle empty classes
+            if np.sum(condition_true) == 0:
+                self.metrics["per_condition"][condition] = {
+                    "auc_roc": 0.0,
+                    "avg_precision": 0.0,
+                    "support": 0,
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "specificity": 0.0,
+                    "accuracy": 0.0,
+                    "f1_score": 0.0,
+                    "true_positives": 0,
+                    "false_positives": 0,
+                    "true_negatives": 0,
+                    "false_negatives": 0,
+                    "precision_curve": None,  # Using None for curves since they can't be calculated
+                    "recall_curve": None,
+                }
+                continue
 
-            # Calculate metrics
-            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
-            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-            accuracy = (tp + tn) / (tp + tn + fp + fn)
-            f1 = (
-                2 * (precision * sensitivity) / (precision + sensitivity)
-                if (precision + sensitivity) > 0
-                else 0
-            )
-
-            prec_curve, recall_curve, _ = precision_recall_curve(
+            # Calculate standard metrics
+            precision, recall, _ = precision_recall_curve(
                 condition_true, condition_proba
             )
+            auc_roc = roc_auc_score(condition_true, condition_proba)
+            avg_precision = average_precision_score(condition_true, condition_proba)
+
+            # Calculate confusion matrix components
+            tn, fp, fn, tp = confusion_matrix(condition_true, condition_pred).ravel()
 
             self.metrics["per_condition"][condition] = {
-                "auc_roc": roc_auc_score(condition_true, condition_proba),
-                "avg_precision": average_precision_score(
-                    condition_true, condition_proba
-                ),
+                "auc_roc": auc_roc,
+                "avg_precision": avg_precision,
                 "support": int(np.sum(condition_true)),
-                "precision": precision,
-                "recall": sensitivity,
-                "specificity": specificity,
-                "accuracy": accuracy,
-                "f1_score": f1,
-                "true_positives": int(tp),
-                "false_positives": int(fp),
-                "true_negatives": int(tn),
-                "false_negatives": int(fn),
-                "precision_curve": prec_curve,
-                "recall_curve": recall_curve,
+                "precision": tp / (tp + fp) if (tp + fp) > 0 else 0,
+                "recall": tp / (tp + fn) if (tp + fn) > 0 else 0,
+                "specificity": tn / (tn + fp) if (tn + fp) > 0 else 0,
+                "confusion_matrix": [[tn, fp], [fn, tp]],
+                "precision_curve": precision,
+                "recall_curve": recall,
             }
 
-            self.metrics["confusion_matrices"][condition] = confusion_matrix(
-                condition_true, condition_pred
-            )
-
-        # Calculate overall metrics
+            # Calculate overall metrics (excluding normal detection)
         self.metrics["overall"] = {
             "classification_report": classification_report(
-                y_true, y_pred, target_names=self.disease_names, output_dict=True
+                y_true,
+                y_pred,
+                target_names=self.disease_names,  # Only the 14 diseases
+                output_dict=True,
+                zero_division=0,
             ),
             "macro_auc_roc": roc_auc_score(y_true, y_pred_proba, average="macro"),
             "micro_auc_roc": roc_auc_score(y_true, y_pred_proba, average="micro"),
-            "weighted_auc_roc": roc_auc_score(y_true, y_pred_proba, average="weighted"),
-            "samples_with_conditions": int(np.sum(np.any(y_true == 1, axis=1))),
-            "normal_samples": int(np.sum(np.all(y_true == 0, axis=1))),
             "total_samples": len(y_true),
         }
 
-        # Calculate normal vs any disease metrics
-        normal_cases = np.all(y_true == 0, axis=1)
-        predicted_normal = np.all(y_pred == 0, axis=1)
+    def plot_confusion_matrix(self, condition: str) -> plt.Figure:
+        """Plot confusion matrix for a specific condition."""
+        cm = self.metrics["per_condition"][condition]["confusion_matrix"]
 
-        self.metrics["normal_detection"] = {
-            "confusion_matrix": confusion_matrix(normal_cases, predicted_normal),
-            "classification_report": classification_report(
-                normal_cases,
-                predicted_normal,
-                target_names=["Any Disease", "Normal"],
-                output_dict=True,
-            ),
-        }
-
-    def plot_confusion_matrix(self):
-        """Plot a single consolidated confusion matrix for all classes.
-
-        Returns:
-            matplotlib.figure.Figure: The confusion matrix plot
-        """
-        # Create a consolidated confusion matrix
-        y_true_flat = np.argmax(self.y_true, axis=1)
-        y_pred_flat = np.argmax(self.y_pred, axis=1)
-
-        cm = confusion_matrix(y_true_flat, y_pred_flat)
-
-        plt.figure(figsize=(12, 10))
+        fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(
             cm,
             annot=True,
             fmt="d",
             cmap="Blues",
-            xticklabels=self.disease_names,
-            yticklabels=self.disease_names,
+            xticklabels=["Negative", "Positive"],
+            yticklabels=["Negative", "Positive"],
         )
-        plt.xlabel("Predicted Label")
-        plt.ylabel("True Label")
-        plt.title("Confusion Matrix")
-        plt.xticks(rotation=45, ha="right")
-        plt.tight_layout()
-        return plt.gcf()
+        plt.title(f"Confusion Matrix - {condition}")
+        plt.xlabel("Predicted")
+        plt.ylabel("Actual")
+        return fig
+
+    def plot_normal_detection_matrix(self) -> plt.Figure:
+        """Plot confusion matrix for normal vs any disease detection."""
+        cm = self.metrics["normal_detection"]["confusion_matrix"]
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=["Predicted Normal", "Predicted Disease"],
+            yticklabels=["Actual Normal", "Actual Disease"],
+        )
+        plt.title("Normal vs Any Disease Detection")
+        return fig
 
     def plot_metrics(self) -> Dict[str, plt.Figure]:
         """Create visualizations for all metrics.
@@ -183,29 +176,20 @@ class MetricsReporter:
         figures = {}
 
         # 1. Plot condition-wise metrics
-        fig_metrics, ax = plt.subplots(figsize=(12, 6))
-        conditions = list(self.metrics["per_condition"].keys())
+        conditions = self.disease_names
         auc_scores = [self.metrics["per_condition"][c]["auc_roc"] for c in conditions]
 
+        fig, ax = plt.subplots(figsize=(12, 6))
         sns.barplot(x=conditions, y=auc_scores)
         plt.xticks(rotation=45, ha="right")
         plt.title("AUC-ROC Scores by Condition")
-        plt.tight_layout()
-        figures["auc_by_condition"] = fig_metrics
+        plt.ylim(0, 1.0)
+        figures["auc_by_condition"] = fig
 
         # 2. Plot normal vs disease confusion matrix
-        fig_cm, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(
-            self.metrics["normal_detection"]["confusion_matrix"],
-            annot=True,
-            fmt="d",
-            cmap="Blues",
-            xticklabels=["Disease", "Normal"],
-            yticklabels=["Disease", "Normal"],
-        )
-        plt.title("Normal vs Disease Detection")
-        plt.tight_layout()
-        figures["normal_detection"] = fig_cm
+        # Plot normal detection confusion matrix
+        fig = self.plot_normal_detection_matrix()
+        figures["normal_detection"] = fig
 
         # 3. Plot support distribution
         fig_support, ax = plt.subplots(figsize=(12, 6))
@@ -291,8 +275,14 @@ class MetricsReporter:
         figures["class_metrics"] = fig
 
         # Log confusion matrices
-        confusion_matrix_fig = self.plot_confusion_matrix()
-        figures["confusion_matrix"] = confusion_matrix_fig
+        normal_detection_fig = self.plot_normal_detection_matrix()
+        figures["normal_detection_matrix"] = normal_detection_fig
+
+        # Optional: Plot confusion matrices for each condition
+        for condition in self.disease_names:
+            fig = self.plot_confusion_matrix(condition)
+            figures[f"confusion_matrix_{condition.lower().replace(' ', '_')}"] = fig
+            plt.close(fig)
 
         return figures
 
