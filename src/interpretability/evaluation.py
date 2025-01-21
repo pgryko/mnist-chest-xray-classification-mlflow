@@ -288,26 +288,6 @@ class MetricsReporter:
 
     def log_to_mlflow(self) -> None:
         """Log all metrics and visualizations to MLflow."""
-        # Log overall metrics
-        # mlflow.log_metrics(
-        #     {
-        #         "macro_auc_roc": self.metrics["overall"]["macro_auc_roc"],
-        #         "micro_auc_roc": self.metrics["overall"]["micro_auc_roc"],
-        #         "weighted_auc_roc": self.metrics["overall"]["weighted_auc_roc"],
-        #         "normal_detection_accuracy": self.metrics["normal_detection"][
-        #             "classification_report"
-        #         ]["accuracy"],
-        #     }
-        # )
-
-        # Log per-condition metrics
-        # for condition, metrics in self.metrics["per_condition"].items():
-        #     mlflow.log_metrics(
-        #         {
-        #             f"auc_roc_{condition.lower()}": metrics["auc_roc"],
-        #             f"avg_precision_{condition.lower()}": metrics["avg_precision"],
-        #         }
-        #     )
 
         # Log detailed metrics as JSON
         mlflow.log_dict(self.metrics["overall"], "overall_metrics.json")
