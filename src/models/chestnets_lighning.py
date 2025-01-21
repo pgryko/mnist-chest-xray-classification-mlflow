@@ -1,3 +1,4 @@
+import os
 from typing import Tuple, Any
 
 import mlflow
@@ -150,8 +151,18 @@ def log_model_description(
     sample_input = torch.randn(1, 1, 64, 64).to(next(model.parameters()).device)
     y = model(sample_input)
     dot = make_dot(y, params=dict(model.named_parameters()))
-    dot.render("model_architecture", format="png")
-    mlflow.log_artifact("model_architecture.png")
+
+    try:
+        # Render will create both .dot and .png files
+        dot.render("model_architecture", format="png")
+        mlflow.log_artifact("model_architecture.png")
+    finally:
+        # Clean up both generated files
+        for ext in [".dot", ".png", ""]:
+            filepath = f"model_architecture{ext}"
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                logger.debug("Cleaned up temporary file", file=filepath)
 
     return model_stats
 
@@ -167,6 +178,9 @@ class ChestNetBase(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
+
+        # micro metrics aggregate across all classes before computing the metric, which is often suitable when you have class imbalance.
+        # Alternatively, "macro" averages metrics per class and then aggregates, which better highlights per-class performance.
 
         # Define metrics
         self.train_metrics = MetricCollection(
@@ -293,6 +307,7 @@ class ChestNetBase(pl.LightningModule):
 
 
 class ChestNetS(ChestNetBase):
+    # multi-label classification model, 14 independent binary classifiers
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.model_name = "ChestNetS"
@@ -303,7 +318,7 @@ class ChestNetS(ChestNetBase):
             "initial_filters": 32,
             "max_filters": 128,
             "dropout_rate": 0.5,
-            "final_activation": "logits",  # changed from 'sigmoid'
+            "final_activation": "sigmoid",  # changed from 'sigmoid'
             "num_classes": 14,
         }
 
@@ -333,13 +348,12 @@ class ChestNetS(ChestNetBase):
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
             nn.Linear(512, 14),
-            # nn.Sigmoid(),  # Apply sigmoid for multi-label classification or softmax for proper probability distribution
         )
 
     def forward(self, x):
         x = self.features(x)
         x = torch.flatten(x, 1)
-        x = self.classifier(x)
+        x = self.classifier(x)  # Raw logits
         return x
 
 
@@ -374,6 +388,84 @@ class ChestNetDebug(ChestNetBase):
 
     def forward(self, x):
         x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+
+class ChestNetSAttention(ChestNetBase):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.model_name = "ChestNetS"
+        self.model_details = {
+            "architecture": "Enhanced CNN with Attention",
+            "input_channels": 1,
+            "conv_layers": 4,
+            "initial_filters": 32,
+            "max_filters": 256,
+            "dropout_rate": 0.5,
+            "final_activation": "none",  # Removed sigmoid as we're using BCEWithLogitsLoss
+            "num_classes": 14,
+        }
+
+        # Feature Extraction Path
+        self.features = nn.ModuleList(
+            [
+                # Initial Block
+                self._make_block(1, 32),
+                self._make_block(32, 64),
+                self._make_block(64, 128),
+                self._make_block(128, 256),
+            ]
+        )
+
+        # Attention Module
+        self.attention = nn.Sequential(nn.Conv2d(256, 1, kernel_size=1), nn.Sigmoid())
+
+        # Classification Head
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(256 * 8 * 8, 1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(1024, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, 14),
+        )
+
+        # Initialize weights
+        self.apply(self._init_weights)
+
+    def _make_block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
+        )
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        # Feature extraction with residual connections
+        features = []
+        for block in self.features:
+            x = block(x)
+            features.append(x)
+
+        # Apply attention
+        att = self.attention(x)
+        x = x * att
+
+        # Classification
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x

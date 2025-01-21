@@ -3,7 +3,7 @@ from scipy.special import expit as sigmoid
 import mlflow
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, TQDMProgressBar
+from pytorch_lightning.callbacks import EarlyStopping, TQDMProgressBar
 from src.configs.config import TrainingConfig, PathConfig
 from src.data.datamodule_lightning import ChestDataModuleLightning
 
@@ -11,8 +11,8 @@ import structlog
 
 from src.interpretability.evaluation import MetricsReporter
 from src.models.chestnets_lighning import (
-    ChestNetDebug,
     log_model_description,
+    ChestNetS,
 )
 
 structlog.configure(
@@ -74,28 +74,15 @@ def main():
     torch.set_float32_matmul_precision("medium")
 
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=3)
+    train_config = TrainingConfig(num_epochs=100)
     path_config = PathConfig()
 
     # Create data module
     data_module = ChestDataModuleLightning(train_config, path_config)
 
     # Initialize model
-    # model = ChestNetS(
-    #     learning_rate=train_config.learning_rate, weight_decay=train_config.weight_decay
-    # )
-
-    model = ChestNetDebug(
+    model = ChestNetS(
         learning_rate=train_config.learning_rate, weight_decay=train_config.weight_decay
-    )
-
-    # Configure callbacks
-    checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss",
-        dirpath="checkpoints",
-        filename="{epoch:02d}-{val_loss:.2f}",
-        save_top_k=1,
-        mode="min",
     )
 
     early_stop_callback = EarlyStopping(
@@ -132,13 +119,6 @@ def main():
 
         log_model_description(model=model, config=train_config)
 
-        # mlf_logger = MLFlowLogger(
-        #     tracking_uri=path_config.mlflow_tracking_uri,
-        #     experiment_name="ChestXRayPytorchLightning",
-        #     log_model=True,
-        #     run_id=run.info.run_id,
-        # )
-
         class NoValProgressBar(TQDMProgressBar):
             def init_validation_tqdm(self):
                 # Return a disabled progress bar for validation
@@ -171,25 +151,6 @@ def main():
 
         # Log test metrics
         logger.info("Test results", test_results=test_results)
-
-        # Get a sample batch from the validation set
-        val_batch = next(iter(data_module.val_dataloader()))
-        sample_inputs, sample_outputs = val_batch
-
-        # Convert to numpy and ensure correct shape
-        sample_inputs_np = sample_inputs.numpy()
-        sample_outputs_np = sample_outputs.numpy()
-
-        # # Log the model with the correct signature
-        # mlflow.pytorch.log_model(
-        #     model,
-        #     artifact_path="best_model",
-        #     signature=infer_signature(
-        #         sample_inputs_np,
-        #         sample_outputs_np,
-        #     ),
-        #     registered_model_name="chest_xray_classifier",
-        # )
 
 
 if __name__ == "__main__":

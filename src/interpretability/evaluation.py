@@ -6,81 +6,118 @@ import numpy as np
 import numpy.typing as npt
 import seaborn as sns
 import torch
-from scipy.special import softmax
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+    average_precision_score,
+    precision_recall_curve,
+)
 from medmnist import INFO
 
 
 class MetricsReporter:
+    """Reports and visualizes metrics for multi-label chest X-ray classification."""
+
     def __init__(self) -> None:
+        """Initialize reporter with chest X-ray specific class names."""
         chest_info = INFO["chestmnist"]
-        no_of_categories = len(chest_info["label"])
-        class_names = [chest_info["label"][str(i)] for i in range(no_of_categories)]
+        self.disease_names = [
+            chest_info["label"][str(i)] for i in range(len(chest_info["label"]))
+        ]
         self.metrics: Dict[str, Any] = {}
-        self.class_names = (
-            class_names
-            if class_names is not None
-            else [str(i) for i in range(no_of_categories)]
-        )
 
     def calculate_metrics(
-        self, y_true: npt.NDArray[np.int_], y_pred_proba: npt.NDArray[np.float64]
+        self,
+        y_true: npt.NDArray[np.int_],
+        y_pred_proba: npt.NDArray[np.float64],
+        threshold: float = 0.5,
     ) -> None:
-        """Calculate metrics for both binary and multi-class classification.
+        """Calculate comprehensive metrics for multi-label classification.
 
         Args:
-            y_true: Ground truth labels
-            y_pred_proba: Model predictions (probabilities)
+            y_true: Ground truth labels (shape: n_samples x n_classes)
+            y_pred_proba: Predicted probabilities (shape: n_samples x n_classes)
+            threshold: Classification threshold for converting probabilities to binary predictions
         """
-        # Check if this is binary or multi-class classification
-        is_multiclass: bool = len(y_pred_proba.shape) > 1 and y_pred_proba.shape[1] > 1
+        # Convert probabilities to binary predictions
+        y_pred = (y_pred_proba >= threshold).astype(int)
 
-        if is_multiclass:
-            # Multi-class case
-            # Ensure probabilities sum to 1 using softmax
-            y_pred_proba_normalized = softmax(y_pred_proba, axis=1)
+        self.y_true = y_true  # Store for later use
+        self.y_pred = (y_pred_proba >= threshold).astype(int)  # Store for later use
 
-            y_pred: npt.NDArray[np.int_] = np.argmax(y_pred_proba, axis=1)
-            if len(y_true.shape) > 1:
-                y_true = np.argmax(y_true, axis=1)
+        # Calculate metrics for each condition
+        self.metrics["per_condition"] = {}
+        self.metrics["confusion_matrices"] = (
+            {}
+        )  # New dictionary for per-class confusion matrices
 
-            self.metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred)
-            self.metrics["classification_report"] = classification_report(
-                y_true, y_pred, output_dict=True
-            )
+        # Add normal class metrics
+        normal_cases = np.all(y_true == 0, axis=1)
+        predicted_normal = np.all(y_pred == 0, axis=1)
+        normal_proba = 1 - np.max(y_pred_proba, axis=1)  # Probability of being normal
 
-            # Calculate macro and weighted ROC AUC using normalized probabilities
-            self.metrics["macro_roc_auc"] = roc_auc_score(
-                y_true, y_pred_proba_normalized, multi_class="ovr", average="macro"
-            )
-            self.metrics["weighted_roc_auc"] = roc_auc_score(
-                y_true, y_pred_proba_normalized, multi_class="ovr", average="weighted"
-            )
-        else:
-            # Binary case
-            y_pred: npt.NDArray[np.int_] = (y_pred_proba >= 0.5).astype(int)
+        # Add normal to per_condition metrics
+        self.metrics["per_condition"]["Normal"] = {
+            "auc_roc": roc_auc_score(normal_cases, normal_proba),
+            "avg_precision": average_precision_score(normal_cases, normal_proba),
+            "support": int(np.sum(normal_cases)),
+            "precision": precision_recall_curve(normal_cases, normal_proba)[0],
+            "recall": precision_recall_curve(normal_cases, normal_proba)[1],
+        }
 
-            self.metrics["confusion_matrix"] = confusion_matrix(y_true, y_pred)
-            self.metrics["classification_report"] = classification_report(
-                y_true, y_pred, output_dict=True
-            )
-            self.metrics["roc_auc"] = roc_auc_score(y_true, y_pred_proba)
+        # Add normal to confusion matrices
+        self.metrics["confusion_matrices"]["Normal"] = confusion_matrix(
+            normal_cases, predicted_normal
+        )
+
+        # Calculate overall metrics
+        self.metrics["overall"] = {
+            "classification_report": classification_report(
+                y_true, y_pred, target_names=self.disease_names, output_dict=True
+            ),
+            "macro_auc_roc": roc_auc_score(y_true, y_pred_proba, average="macro"),
+            "micro_auc_roc": roc_auc_score(y_true, y_pred_proba, average="micro"),
+            "weighted_auc_roc": roc_auc_score(y_true, y_pred_proba, average="weighted"),
+            "samples_with_conditions": int(np.sum(np.any(y_true == 1, axis=1))),
+            "normal_samples": int(np.sum(np.all(y_true == 0, axis=1))),
+            "total_samples": len(y_true),
+        }
+
+        # Calculate normal vs any disease metrics
+        normal_cases = np.all(y_true == 0, axis=1)
+        predicted_normal = np.all(y_pred == 0, axis=1)
+
+        self.metrics["normal_detection"] = {
+            "confusion_matrix": confusion_matrix(normal_cases, predicted_normal),
+            "classification_report": classification_report(
+                normal_cases,
+                predicted_normal,
+                target_names=["Any Disease", "Normal"],
+                output_dict=True,
+            ),
+        }
 
     def plot_confusion_matrix(self):
-        """Plot confusion matrix using seaborn.
+        """Plot a single consolidated confusion matrix for all classes.
 
         Returns:
             matplotlib.figure.Figure: The confusion matrix plot
         """
-        cm = self.metrics["confusion_matrix"]
-        plt.figure(figsize=(10, 8))
+        # Create a consolidated confusion matrix
+        y_true_flat = np.argmax(self.y_true, axis=1)
+        y_pred_flat = np.argmax(self.y_pred, axis=1)
+
+        cm = confusion_matrix(y_true_flat, y_pred_flat)
+
+        plt.figure(figsize=(12, 10))
         sns.heatmap(
             cm,
             annot=True,
             fmt="d",
             cmap="Blues",
-            xticklabels=self.class_names[: cm.shape[1]],
-            yticklabels=self.class_names[: cm.shape[0]],
+            xticklabels=self.disease_names,
+            yticklabels=self.disease_names,
         )
         plt.xlabel("Predicted Label")
         plt.ylabel("True Label")
@@ -89,67 +126,72 @@ class MetricsReporter:
         plt.tight_layout()
         return plt.gcf()
 
-    def log_to_mlflow(self):
-        """Log metrics to MLflow for both binary and multi-class cases."""
-        is_multiclass = "macro_roc_auc" in self.metrics
+    def plot_metrics(self) -> Dict[str, plt.Figure]:
+        """Create visualizations for all metrics.
 
-        summary_metrics = {}
+        Returns:
+            Dictionary containing all generated figures
+        """
+        figures = {}
 
-        if is_multiclass:
-            summary_metrics.update(
-                {
-                    "macro_roc_auc": self.metrics["macro_roc_auc"],
-                    "weighted_roc_auc": self.metrics["weighted_roc_auc"],
-                }
-            )
-        else:
-            summary_metrics["roc_auc"] = self.metrics["roc_auc"]
+        # 1. Plot condition-wise metrics
+        fig_metrics, ax = plt.subplots(figsize=(12, 6))
+        conditions = list(self.metrics["per_condition"].keys())
+        auc_scores = [self.metrics["per_condition"][c]["auc_roc"] for c in conditions]
 
-        # Add accuracy to summary metrics
-        report = self.metrics["classification_report"]
-        summary_metrics["accuracy"] = report["accuracy"]
+        sns.barplot(x=conditions, y=auc_scores)
+        plt.xticks(rotation=45, ha="right")
+        plt.title("AUC-ROC Scores by Condition")
+        plt.tight_layout()
+        figures["auc_by_condition"] = fig_metrics
 
-        # Log only summary metrics as MLflow metrics
-        mlflow.log_metrics(summary_metrics)
+        # 2. Plot normal vs disease confusion matrix
+        fig_cm, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(
+            self.metrics["normal_detection"]["confusion_matrix"],
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=["Disease", "Normal"],
+            yticklabels=["Disease", "Normal"],
+        )
+        plt.title("Normal vs Disease Detection")
+        plt.tight_layout()
+        figures["normal_detection"] = fig_cm
 
-        # Save detailed metrics as JSON artifact
-        detailed_metrics = {
-            "classification_report": self.metrics["classification_report"],
-            "averages": {
-                "macro_avg": report["macro avg"],
-                "weighted_avg": report["weighted avg"],
-            },
-        }
+        # 3. Plot support distribution
+        fig_support, ax = plt.subplots(figsize=(12, 6))
+        supports = [self.metrics["per_condition"][c]["support"] for c in conditions]
+        sns.barplot(x=conditions, y=supports)
+        plt.xticks(rotation=45, ha="right")
+        plt.title("Number of Cases by Condition")
+        plt.tight_layout()
+        figures["condition_support"] = fig_support
 
-        # Save detailed metrics as a JSON artifact
-        mlflow.log_dict(detailed_metrics, "detailed_metrics.json")
-
+        # Create consolidated per-class metrics visualizations
         # Create consolidated per-class metrics visualizations
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 16))
 
         metrics_data = []
+        report = self.metrics["overall"]["classification_report"]
 
-        # Collect metrics for each class
-        for i, class_label in enumerate(report.keys()):
-            if class_label in ["accuracy", "macro avg", "weighted avg"]:
-                continue
+        # Collect metrics for each disease class
+        for class_label in self.disease_names:
+            if class_label in report:  # Ensure the class exists in the report
+                class_metrics = report[class_label]
+                metrics_data.append(
+                    {
+                        "class_name": class_label,
+                        "precision": class_metrics["precision"],
+                        "recall": class_metrics["recall"],
+                        "f1_score": class_metrics["f1-score"],
+                        "support": class_metrics["support"],
+                    }
+                )
 
-            class_metrics = report[class_label]
-            class_name = (
-                self.class_names[int(class_label)]
-                if i < len(self.class_names)
-                else class_label
-            )
-
-            metrics_data.append(
-                {
-                    "class_name": class_name,
-                    "precision": class_metrics["precision"],
-                    "recall": class_metrics["recall"],
-                    "f1_score": class_metrics["f1-score"],
-                    "support": class_metrics["support"],
-                }
-            )
+        if not metrics_data:
+            plt.close(fig)
+            return figures
 
         # Sort by support count (descending)
         metrics_data.sort(key=lambda x: x["support"], reverse=True)
@@ -165,32 +207,108 @@ class MetricsReporter:
         x = np.arange(len(class_names))
         width = 0.25
 
-        ax1.bar(x - width, precision_scores, width, label="Precision")
-        ax1.bar(x, recall_scores, width, label="Recall")
-        ax1.bar(x + width, f1_scores, width, label="F1-Score")
+        # Add color scheme for better visibility
+        ax1.bar(x - width, precision_scores, width, label="Precision", color="#2ecc71")
+        ax1.bar(x, recall_scores, width, label="Recall", color="#3498db")
+        ax1.bar(x + width, f1_scores, width, label="F1-Score", color="#e74c3c")
+
         ax1.set_ylabel("Score")
-        ax1.set_title("Precision, Recall, and F1-Score by Class (Sorted by Support)")
+        ax1.set_title("Precision, Recall, and F1-Score by Class", fontsize=12, pad=20)
         ax1.set_xticks(x)
         ax1.set_xticklabels(class_names, rotation=45, ha="right")
-        ax1.legend()
+        ax1.legend(loc="upper right")
         ax1.grid(True, alpha=0.3)
+        ax1.set_ylim(0, 1.0)  # Set y-axis limits for scores
 
         # Plot support values
-        ax2.bar(x, support_values)
-        ax2.set_ylabel("Support")
-        ax2.set_title("Class Distribution (Support)")
+        support_bars = ax2.bar(x, support_values, color="#9b59b6")
+        ax2.set_ylabel("Number of Samples")
+        ax2.set_title("Class Distribution (Support)", fontsize=12, pad=20)
         ax2.set_xticks(x)
         ax2.set_xticklabels(class_names, rotation=45, ha="right")
         ax2.grid(True, alpha=0.3)
 
-        plt.tight_layout()
-        mlflow.log_figure(fig, "class_metrics.png")
-        plt.close()
+        # Add value labels on support bars
+        for bar in support_bars:
+            height = bar.get_height()
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{int(height):,}",
+                ha="center",
+                va="bottom",
+            )
 
-        # Log confusion matrix plot
-        cm_fig = self.plot_confusion_matrix()
-        mlflow.log_figure(cm_fig, "confusion_matrix.png")
-        plt.close()
+        plt.tight_layout()
+        figures["class_metrics"] = fig
+
+        # Log confusion matrices
+        confusion_matrix_fig = self.plot_confusion_matrix()
+        figures["confusion_matrix"] = confusion_matrix_fig
+
+        return figures
+
+    def log_to_mlflow(self) -> None:
+        """Log all metrics and visualizations to MLflow."""
+        # Log overall metrics
+        # mlflow.log_metrics(
+        #     {
+        #         "macro_auc_roc": self.metrics["overall"]["macro_auc_roc"],
+        #         "micro_auc_roc": self.metrics["overall"]["micro_auc_roc"],
+        #         "weighted_auc_roc": self.metrics["overall"]["weighted_auc_roc"],
+        #         "normal_detection_accuracy": self.metrics["normal_detection"][
+        #             "classification_report"
+        #         ]["accuracy"],
+        #     }
+        # )
+
+        # Log per-condition metrics
+        for condition, metrics in self.metrics["per_condition"].items():
+            mlflow.log_metrics(
+                {
+                    f"auc_roc_{condition.lower()}": metrics["auc_roc"],
+                    f"avg_precision_{condition.lower()}": metrics["avg_precision"],
+                }
+            )
+
+        # Log detailed metrics as JSON
+        mlflow.log_dict(self.metrics["overall"], "overall_metrics.json")
+        mlflow.log_dict(
+            self.metrics["normal_detection"], "normal_detection_metrics.json"
+        )
+
+        # Log visualizations
+        figures = self.plot_metrics()
+        for name, fig in figures.items():
+            if isinstance(fig, plt.Figure):  # Add type check
+                mlflow.log_figure(fig, f"{name}.png")
+                plt.close(fig)
+
+    def print_summary(self) -> None:
+        """Print a human-readable summary of the metrics."""
+        print("\n=== Model Performance Summary ===\n")
+
+        print("Overall Metrics:")
+        print(f"Macro AUC-ROC: {self.metrics['overall']['macro_auc_roc']:.3f}")
+        print(f"Micro AUC-ROC: {self.metrics['overall']['micro_auc_roc']:.3f}")
+        print(f"Total samples: {self.metrics['overall']['total_samples']}")
+        print(f"Normal samples: {self.metrics['overall']['normal_samples']}")
+        print(
+            f"Samples with conditions: {self.metrics['overall']['samples_with_conditions']}"
+        )
+
+        print("\nPer-Condition Performance:")
+        for condition, metrics in self.metrics["per_condition"].items():
+            print(f"\n{condition}:")
+            print(f"  AUC-ROC: {metrics['auc_roc']:.3f}")
+            print(f"  Avg Precision: {metrics['avg_precision']:.3f}")
+            print(f"  Support: {metrics['support']}")
+
+        print("\nNormal vs Disease Detection:")
+        report = self.metrics["normal_detection"]["classification_report"]
+        print(f"Accuracy: {report['accuracy']:.3f}")
+        print(f"Normal Precision: {report['Normal']['precision']:.3f}")
+        print(f"Normal Recall: {report['Normal']['recall']:.3f}")
 
 
 def evaluate_model(
