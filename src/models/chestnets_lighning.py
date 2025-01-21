@@ -158,7 +158,7 @@ def log_model_description(
         mlflow.log_artifact("model_architecture.png")
     finally:
         # Clean up both generated files
-        for ext in [".dot", ".png", ""]:
+        for ext in [".dot", ".png"]:
             filepath = f"model_architecture{ext}"
             if os.path.exists(filepath):
                 os.remove(filepath)
@@ -175,9 +175,15 @@ class ChestNetBase(pl.LightningModule):
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-5,
         num_classes: int = 14,
+        pos_weight: torch.Tensor = None,
     ):
         super().__init__()
         self.save_hyperparameters()
+
+        if pos_weight is not None:
+            self.register_buffer("pos_weight", pos_weight)
+        else:
+            self.pos_weight = None
 
         # micro metrics aggregate across all classes before computing the metric, which is often suitable when you have class imbalance.
         # Alternatively, "macro" averages metrics per class and then aggregates, which better highlights per-class performance.
@@ -230,7 +236,9 @@ class ChestNetBase(pl.LightningModule):
 
         #  BCEWithLogitsLoss often yields numerical stability and is the recommended pattern for multi-label classification.
         # Use BCEWithLogitsLoss
-        loss = F.binary_cross_entropy_with_logits(y_hat, y.float())
+        loss = F.binary_cross_entropy_with_logits(
+            y_hat, y.float(), pos_weight=self.pos_weight
+        )
 
         # Update and log metrics
         metrics = self.train_metrics(
@@ -257,7 +265,9 @@ class ChestNetBase(pl.LightningModule):
             logger.info(f"Current batch size: {x.shape[0]}")
 
         y_hat = self(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y.float())
+        loss = F.binary_cross_entropy_with_logits(
+            y_hat, y.float(), pos_weight=self.pos_weight
+        )
 
         # Update and log metrics
         metrics = self.val_metrics(torch.sigmoid(y_hat), y)
@@ -298,7 +308,7 @@ class ChestNetS(ChestNetBase):
             "initial_filters": 32,
             "max_filters": 128,
             "dropout_rate": 0.5,
-            "final_activation": "sigmoid",  # changed from 'sigmoid'
+            "final_activation": "logits",  # changed from 'sigmoid'
             "num_classes": 14,
         }
 

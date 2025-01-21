@@ -31,7 +31,7 @@ class MetricsReporter:
         self,
         y_true: npt.NDArray[np.int_],
         y_pred_proba: npt.NDArray[np.float64],
-        threshold: float = 0.5,
+        threshold: float = 0.1,
     ) -> None:
         """Calculate comprehensive metrics for multi-label classification.
 

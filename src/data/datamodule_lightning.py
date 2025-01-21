@@ -1,6 +1,7 @@
 import os
 
 import pytorch_lightning as pl
+import torch
 from medmnist import ChestMNIST
 from torch.utils.data import DataLoader
 
@@ -16,6 +17,23 @@ class ChestDataModuleLightning(pl.LightningDataModule):
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+
+    def calculate_class_weights(self):
+        """Calculate class weights based on training set distribution."""
+        # Initialize counters
+        num_classes = 14  # For ChestMNIST
+        class_counts = torch.zeros(num_classes, dtype=torch.float32)
+
+        # Iterate through training dataset
+        for _, labels in DataLoader(self.train_dataset, batch_size=512, num_workers=4):
+            class_counts += labels.sum(dim=0)
+
+        # Handle division by zero for classes with no positives
+        num_samples = len(self.train_dataset)
+        num_negatives = num_samples - class_counts
+        pos_weight = num_negatives / (class_counts + 1e-6)  # Add epsilon to avoid NaN
+
+        return pos_weight
 
     def setup(self, stage: str = None):
         """Setup datasets for each stage of training."""

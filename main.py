@@ -80,6 +80,11 @@ def main():
     # Create data module
     data_module = ChestDataModuleLightning(train_config, path_config)
 
+    data_module.setup("fit")  # Setup first to access datasets
+
+    pos_weight = data_module.calculate_class_weights()
+    logger.info("Class weights calculated", pos_weight=pos_weight)
+
     # Initialize model
     model = ChestNetS(
         learning_rate=train_config.learning_rate, weight_decay=train_config.weight_decay
