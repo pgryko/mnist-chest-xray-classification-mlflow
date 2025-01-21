@@ -182,7 +182,6 @@ class ChestNetBase(pl.LightningModule):
         # micro metrics aggregate across all classes before computing the metric, which is often suitable when you have class imbalance.
         # Alternatively, "macro" averages metrics per class and then aggregates, which better highlights per-class performance.
 
-        # Define metrics
         self.train_metrics = MetricCollection(
             {
                 "accuracy": MultilabelAccuracy(num_labels=num_classes, average="micro"),
@@ -223,19 +222,6 @@ class ChestNetBase(pl.LightningModule):
             },
         }
 
-    def on_train_start(self):
-        # Log custom information at start of training
-        # mlflow.log_params(
-        #     {
-        #         "data_transforms": str(self.trainer.datamodule.transform),
-        #         "custom_architecture": "ChestNetS",
-        #     }
-        # )
-
-        print("on_train_start")
-
-        # log_model_summary(self, self.hparams)
-
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
@@ -257,12 +243,6 @@ class ChestNetBase(pl.LightningModule):
             prog_bar=True,
         )
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-
-        # Log custom metrics that autolog doesn't capture
-        # if self.trainer.is_last_batch:
-        #     mlflow.log_metrics(
-        #         {"custom_metric": some_value, "batch_specific_metric": another_value}
-        #     )
 
         return loss
 
