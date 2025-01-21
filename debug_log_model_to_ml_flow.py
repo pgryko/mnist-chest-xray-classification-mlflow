@@ -49,7 +49,7 @@ def main(run_id: str):
 
     # Evaluate on the test set in a separate run
     with mlflow.start_run(
-        run_id="55661eb3fed343cea2204b1f34865414",
+        # run_id="55661eb3fed343cea2204b1f34865414",
     ):
         y_true, y_prob = evaluate_model(model, test_loader, device)
 

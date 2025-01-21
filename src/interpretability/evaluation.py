@@ -71,6 +71,54 @@ class MetricsReporter:
             normal_cases, predicted_normal
         )
 
+        # Add metrics for each condition including normal
+        for idx, condition in enumerate(self.disease_names):
+            # For disease conditions
+            condition_true = y_true[:, idx]
+            condition_pred = y_pred[:, idx]
+            condition_proba = y_pred_proba[:, idx]
+
+            # Calculate confusion matrix values
+            tn, fp, fn, tp = confusion_matrix(condition_true, condition_pred).ravel()
+
+            # Calculate metrics
+            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            accuracy = (tp + tn) / (tp + tn + fp + fn)
+            f1 = (
+                2 * (precision * sensitivity) / (precision + sensitivity)
+                if (precision + sensitivity) > 0
+                else 0
+            )
+
+            prec_curve, recall_curve, _ = precision_recall_curve(
+                condition_true, condition_proba
+            )
+
+            self.metrics["per_condition"][condition] = {
+                "auc_roc": roc_auc_score(condition_true, condition_proba),
+                "avg_precision": average_precision_score(
+                    condition_true, condition_proba
+                ),
+                "support": int(np.sum(condition_true)),
+                "precision": precision,
+                "recall": sensitivity,
+                "specificity": specificity,
+                "accuracy": accuracy,
+                "f1_score": f1,
+                "true_positives": int(tp),
+                "false_positives": int(fp),
+                "true_negatives": int(tn),
+                "false_negatives": int(fn),
+                "precision_curve": prec_curve,
+                "recall_curve": recall_curve,
+            }
+
+            self.metrics["confusion_matrices"][condition] = confusion_matrix(
+                condition_true, condition_pred
+            )
+
         # Calculate overall metrics
         self.metrics["overall"] = {
             "classification_report": classification_report(
@@ -263,13 +311,13 @@ class MetricsReporter:
         # )
 
         # Log per-condition metrics
-        for condition, metrics in self.metrics["per_condition"].items():
-            mlflow.log_metrics(
-                {
-                    f"auc_roc_{condition.lower()}": metrics["auc_roc"],
-                    f"avg_precision_{condition.lower()}": metrics["avg_precision"],
-                }
-            )
+        # for condition, metrics in self.metrics["per_condition"].items():
+        #     mlflow.log_metrics(
+        #         {
+        #             f"auc_roc_{condition.lower()}": metrics["auc_roc"],
+        #             f"avg_precision_{condition.lower()}": metrics["avg_precision"],
+        #         }
+        #     )
 
         # Log detailed metrics as JSON
         mlflow.log_dict(self.metrics["overall"], "overall_metrics.json")
