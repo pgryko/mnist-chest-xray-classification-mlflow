@@ -74,7 +74,7 @@ def main():
     torch.set_float32_matmul_precision("medium")
 
     # Instantiate configs
-    train_config = TrainingConfig(num_epochs=100)
+    train_config = TrainingConfig(num_epochs=1000)
     path_config = PathConfig()
 
     # Create data module
@@ -90,6 +90,14 @@ def main():
         learning_rate=train_config.learning_rate, weight_decay=train_config.weight_decay
     )
 
+    # model = ChestNetResnet(
+    #     learning_rate=train_config.learning_rate,
+    #     weight_decay=train_config.weight_decay,
+    #     num_classes=14,
+    #     pos_weight=pos_weight,
+    #     pretrained=True,
+    # )
+
     early_stop_callback = EarlyStopping(
         monitor="val_loss", patience=train_config.patience, mode="min"
     )
@@ -100,8 +108,8 @@ def main():
 
     # Let MLFlowLogger Handle the Experiment
     with mlflow.start_run(
-        run_name="figuring out logging, checkpoint_callback, autologging disabled",
-        description="Debug: Training run for chest X-ray classification using ChestNetS architecture.",
+        run_name="Intial Run",
+        description="Training run for chest X-ray classification using RestNet18 architecture.",
         tags={
             "model_type": model.model_name,
             "dataset": "ChestMNIST",

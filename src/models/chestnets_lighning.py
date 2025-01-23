@@ -1,7 +1,7 @@
-import os
 from typing import Tuple, Any
 
 import mlflow
+from mlflow import MlflowException
 from torchviz import make_dot
 
 import pytorch_lightning as pl
@@ -44,39 +44,45 @@ def _infer_input_size(model: nn.Module) -> tuple:
     Infer the required input size for the model based on its architecture.
     """
     # Find first conv layer to get input channels
-    first_layer = next((m for m in model.modules() if isinstance(m, nn.Conv2d)), None)
-    if not first_layer:
-        raise ValueError("Could not find a Conv2d layer in the model")
+    first_conv = next(m for m in model.modules() if isinstance(m, nn.Conv2d))
+    in_channels = first_conv.in_channels
 
-    in_channels = first_layer.in_channels
-
-    # Find first linear layer to get required flattened input size
-    first_linear = next((m for m in model.modules() if isinstance(m, nn.Linear)), None)
-    if not first_linear:
-        raise ValueError("Could not find a Linear layer in the model")
-
-    required_features = first_linear.in_features
-
-    # Calculate the feature extractor's output shape
-    if not hasattr(model, "features"):
-        raise ValueError(
-            "Model must have a 'features' attribute containing the convolutional layers"
-        )
-
-    out_channels, out_height, out_width = _calculate_output_shape(
-        model.features, in_channels
-    )
-
-    # Verify that the output shape matches the linear layer's input
-    if out_channels * out_height * out_width != required_features:
-        raise ValueError(
-            f"Model architecture mismatch: feature output shape "
-            f"{out_channels}*{out_height}*{out_width} = {out_channels * out_height * out_width} "
-            f"doesn't match linear input features {required_features}"
-        )
-
-    # Return the expected input size (batch_size, channels, height, width)
-    return (1, in_channels, 64, 64)  # Fixed 64x64 input size
+    # Use standard ImageNet input size for ResNet models
+    return (1, in_channels, 64, 64)
+    # # Find first conv layer to get input channels
+    # first_layer = next((m for m in model.modules() if isinstance(m, nn.Conv2d)), None)
+    # if not first_layer:
+    #     raise ValueError("Could not find a Conv2d layer in the model")
+    #
+    # in_channels = first_layer.in_channels
+    #
+    # # Find first linear layer to get required flattened input size
+    # first_linear = next((m for m in model.modules() if isinstance(m, nn.Linear)), None)
+    # if not first_linear:
+    #     raise ValueError("Could not find a Linear layer in the model")
+    #
+    # required_features = first_linear.in_features
+    #
+    # # Calculate the feature extractor's output shape
+    # if not hasattr(model, "features"):
+    #     raise ValueError(
+    #         "Model must have a 'features' attribute containing the convolutional layers"
+    #     )
+    #
+    # out_channels, out_height, out_width = _calculate_output_shape(
+    #     model.features, in_channels
+    # )
+    #
+    # # Verify that the output shape matches the linear layer's input
+    # if out_channels * out_height * out_width != required_features:
+    #     raise ValueError(
+    #         f"Model architecture mismatch: feature output shape "
+    #         f"{out_channels}*{out_height}*{out_width} = {out_channels * out_height * out_width} "
+    #         f"doesn't match linear input features {required_features}"
+    #     )
+    #
+    # # Return the expected input size (batch_size, channels, height, width)
+    # return (1, in_channels, 64, 64)  # Fixed 64x64 input size
 
 
 def log_model_description(
@@ -100,11 +106,11 @@ def log_model_description(
         logger.info("Inferred input size", input_size=input_size)
 
     # Validate input size matches model expectations
-    if input_size[1] != model.features[0].in_channels:
-        raise ValueError(
-            f"Input channels {input_size[1]} doesn't match model's "
-            f"expected input channels {model.features[0].in_channels}"
-        )
+    if (
+        input_size[1]
+        != next(m for m in model.modules() if isinstance(m, nn.Conv2d)).in_channels
+    ):
+        raise ValueError("Input channel mismatch")
 
     # Generate model summary
     model_stats: ModelStatistics = summary(
@@ -125,45 +131,47 @@ def log_model_description(
     logger.info("Model Summary", model_stats=model_stats)
 
     # Log model details and summary
-    mlflow.log_param("model_name", model.model_name)
-    mlflow.log_dict(model.model_details, "model_details.json")
-    mlflow.log_text(str(model_stats), "model_summary.txt")
+    try:
+        mlflow.log_param("model_name", model.model_name)
+        mlflow.log_dict(model.model_details, "model_details.json")
+        mlflow.log_text(str(model_stats), "model_summary.txt")
+    except MlflowException as e:
+        logger.error("Failed to log model params", error=str(e))
 
     if model_stats:
-        model_params = {
-            "total_params": model_stats.total_params,
-            "trainable_params": model_stats.trainable_params,
-            "non_trainable_params": model_stats.total_params
-            - model_stats.trainable_params,
-        }
-        mlflow.log_params(model_params)
+        try:
+            model_params = {
+                "total_params": model_stats.total_params,
+                "trainable_params": model_stats.trainable_params,
+                "non_trainable_params": model_stats.total_params
+                - model_stats.trainable_params,
+            }
+            mlflow.log_params(model_params)
+        except MlflowException as e:
+            logger.error("Failed to log model params", error=str(e))
 
     # Log training hyperparameters
-    training_params = {
-        "model_name": model.__class__.__name__,
-        "lr": config.learning_rate,
-        "batch_size": config.batch_size,
-        "num_epochs": config.num_epochs,
-        "weight_decay": config.weight_decay,
-    }
-    mlflow.log_params(training_params)
-
-    sample_input = torch.randn(1, 1, 64, 64).to(next(model.parameters()).device)
-    y = model(sample_input)
-    dot = make_dot(y, params=dict(model.named_parameters()))
+    try:
+        training_params = {
+            "model_name": model.__class__.__name__,
+            "lr": config.learning_rate,
+            "batch_size": config.batch_size,
+            "num_epochs": config.num_epochs,
+            "weight_decay": config.weight_decay,
+        }
+        mlflow.log_params(training_params)
+    except MlflowException as e:
+        logger.error("Failed to log model params", error=str(e))
 
     try:
-        # Render will create both .dot and .png files
-        dot.render("model_architecture", format="png")
-        mlflow.log_artifact("model_architecture.png")
-    finally:
-        # Clean up both generated files
-        for ext in [".dot", ".png"]:
-            filepath = f"model_architecture{ext}"
-            if os.path.exists(filepath):
-                os.remove(filepath)
-                logger.debug("Cleaned up temporary file", file=filepath)
+        sample_input = torch.randn(1, 1, 64, 64).to(next(model.parameters()).device)
+        y = model(sample_input)
+        dot = make_dot(y, params=dict(model.named_parameters()))
 
+        dot.render("model_architecture", format="png", cleanup=True)
+        mlflow.log_artifact("model_architecture.png")
+    except MlflowException as e:
+        logger.error("Failed to log model params", error=str(e))
     return model_stats
 
 

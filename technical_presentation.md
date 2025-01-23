@@ -1,251 +1,254 @@
-Here's the presentation converted to Marp format. I'll break it into sections for clarity.
-
-```markdown
 ---
 marp: true
 theme: default
 paginate: true
-style: |
-  section {
-    background-color: #ffffff;
-    font-family: Arial, sans-serif;
-  }
-  h1 {
-    color: #333333;
-  }
-  code {
-    background-color: #f0f0f0;
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-  }
 ---
 
 # Deep Learning for Chest X-Ray Classification
-## ChestMNIST Binary Classification Project
+## A Technical Implementation with PyTorch Lightning
 
 ---
 
-# Overview
+# Project Overview
 
-- Dataset: ChestMNIST (64x64 grayscale images)
-- Task: Binary Classification
-- Approach: Custom CNN & Transfer Learning
-- Tools: PyTorch, MLflow, FastAPI
+- Multi-label classification of chest X-rays
+- 14 different pathological conditions
+- Custom CNN and transfer learning approaches
+- MLFlow for full experiment tracking and reproducibility
+- ❌ Didn't have time to implement explainable AI techniques
+- ❌ Didn't have time to implement hyperparameter optimization
+---
+
+# Medical Context
+
+- Chest X-rays: Primary diagnostic tool
+- Common conditions detected:
+  - Pneumonia
+  - Cardiomegaly
+  - Edema
+  - Pneumothorax
+- Critical for rapid diagnosis and triage
+---
+
+# Class distribution (unbalanced)
+![](images/condition_support.png)
 
 ---
 
-# Domain Knowledge
+# Class Distribution with Normal
+![](images/condition_support_with_normal.png)
 
-- Medical Context
-  - Chest X-ray screening importance
-  - Common pathological patterns
-  - Clinical workflow integration
+---
 
-- Impact
-  - Screening efficiency
-  - Early detection support
-  - Workflow optimization
+# Dataset Statistics
+
+![height:500px](images/Sample_Distribution_Table.png)
 
 ---
 
 # Technical Architecture
 
-![height:400px](./architecture_diagram.png)
+## Infrastructure
+- PyTorch Lightning for training
+- MLflow for experiment tracking
+- Mixed precision training (FP16)
+- GPU acceleration
 
-- Custom CNN with attention mechanisms
-- Transfer learning from ImageNet
-- MLflow experiment tracking
+## Model Design
+- Custom CNN architecture
+- ResNet transfer learning option
+- Early stopping and learning rate scheduling
+
+---
+
+# Training Process
+
+1. Data Pipeline
+   - Custom DataModule
+   - Augmentation strategies
+   - ❌ Class weight balancing (wasn't sure about the best approach)
+
+2. Training Loop
+   - Early stopping
+   - Learning rate scheduling
+   - Metrics monitoring
+   - Experiment tracking
+
+---
+
+# Augnementation Strategies
+
+- Preprocessing
+  ```python
+  transforms = A.Compose([
+                    A.RandomRotate90(p=0.5),
+                    A.VerticalFlip(p=0.5),
+                    A.ShiftScaleRotate(
+                        shift_limit=0.1,
+                        scale_limit=0.1,
+                        rotate_limit=rotate_limit,
+                        p=0.5,
+                    ),
+                    A.RandomBrightnessContrast(
+                        brightness_limit=brightness, contrast_limit=contrast, p=0.2
+                    ),
+                    A.Normalize(mean=[0.5], std=[0.5]),
+                    ToTensorV2(),
+  ])
+  ```
+
+---
+
+![height:400px](images/augmentation_output.png)
 
 ---
 
 # Custom CNN Architecture
 
 ```python
-class ChestNetL(nn.Module):
-    def __init__(self):
-        super(ChestNetL, self).__init__()
+class ChestNetS(ChestNetBase):
+    """
+    Simple CNN with three conv blocks and a classifier head. Each convolutional block includes convolution, batch normalization, ReLU activation,
+    and max pooling operations. The classifier uses dropout for regularization and fully connected layers for final classification.
+    Takes 64x64 grayscale images, outputs 14 binary classifications.
+    """
+        # Feature extraction backbone
         self.features = nn.Sequential(
-            # Initial layers
-            nn.Conv2d(1, 64, kernel_size=3, padding=1),
+            # Block 1: Input (1, 64, 64) -> Output (32, 32, 32)
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),  # Normalize activations for stable training
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),  # Reduce spatial dimensions by 2x
+            
+            # Block 2: Input (32, 32, 32) -> Output (64, 16, 16)
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
             
-            # Deep features
-            self._make_layer(64, 128),
-            self._make_layer(128, 256),
-            
-            # Attention mechanism
-            AttentionModule(256)
+            # Block 3: Input (64, 16, 16) -> Output (128, 8, 8)
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),
         )
+
+        # Classification head
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.5),  # Prevent overfitting
+            nn.Linear(128 * 8 * 8, 512),  # Flatten and project to 512 dimensions
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),  # Additional dropout layer
+            nn.Linear(512, 14),  # Final projection to output classes
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)  # Extract visual features
+        x = torch.flatten(x, 1)  # Flatten spatial dimensions
+        x = self.classifier(x)  # Generate classification logits
+        return x
+
 ```
 
 ---
 
-# Data Pipeline
-
-- Preprocessing
-  ```python
-  transforms = A.Compose([
-      A.RandomRotate90(),
-      A.Flip(),
-      A.Normalize(),
-      ToTensorV2()
-  ])
-  ```
-
-- Augmentation Strategy
-  - Domain-specific transformations
-  - Balanced dataset creation
-  - Validation split
-
----
-
-# Training Process
-
-![height:400px](./training_metrics.png)
-
-- Cross-validation results
-- Learning rate scheduling
-- Early stopping implementation
-
----
-
-# Model Performance
+# Resnet Architecture
 
 ```python
-Performance Metrics:
-- Accuracy: 0.92
-- ROC-AUC: 0.95
-- Precision: 0.91
-- Recall: 0.93
-```
+class ChestNetResnet(ChestNetBase):
+    # Input Size Compatibility: The ResNet-18 model is compatible with 64x64 inputs due to the
+    # adaptive average pooling layer, which adjusts to varying spatial dimensions.
+    # Pretrained Weights Handling: The first convolutional layer's weights are initialized by
+    # averaging the pretrained RGB weights, preserving some pretrained features even with grayscale input.
+    def __init__(
+    ):
+        # Load pretrained ResNet-18
+        backbone = models.resnet18(pretrained=pretrained)
+        # Modify first convolutional layer for grayscale input, 
+        original_conv1 = backbone.conv1
+        self.backbone = backbone
+        self.backbone.conv1 = nn.Conv2d(
+            1,  # Input channels changed to 1
+            original_conv1.out_channels,
+            kernel_size=original_conv1.kernel_size,
+            stride=original_conv1.stride,
+            padding=original_conv1.padding,
+            bias=False,
+        )
+        # Initialize weights from pretrained model
+        if pretrained:
+            with torch.no_grad():
+                self.backbone.conv1.weight.copy_(
+                    original_conv1.weight.mean(dim=1, keepdim=True)
+                )
+        # Replace final fully connected layer
+        in_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Linear(in_features, num_classes)
+        # Define feature extractor
+        self.features = nn.Sequential(
+            self.backbone.conv1,
+            self.backbone.bn1,
+            self.backbone.relu,
+            self.backbone.maxpool,
+            self.backbone.layer1,
+            self.backbone.layer2,
+            self.backbone.layer3,
+            self.backbone.layer4,
+            self.backbone.avgpool,
+        )
 
-![height:300px](./roc_curve.png)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.backbone.fc(x)
+        return x
 
----
-
-# Explainable AI Implementation
-
-- Grad-CAM Visualizations
-![height:300px](./gradcam_example.png)
-
-- SHAP Values Analysis
-![height:200px](./shap_values.png)
-
----
-
-# Deployment Architecture
-
-```mermaid
-graph LR
-    A[Client] --> B[FastAPI]
-    B --> C[Model Service]
-    C --> D[Monitoring]
-    C --> E[Storage]
-```
-
----
-
-# Production Setup
-
-```python
-# FastAPI Endpoint
-@app.post("/predict")
-async def predict(file: UploadFile):
-    image = load_image(file)
-    prediction = model.predict(image)
-    return {
-        "prediction": prediction,
-        "confidence": confidence
-    }
-```
-
----
-
-# Monitoring Dashboard
-
-![height:500px](./monitoring_dashboard.png)
-
----
-
-# Model Versioning & Tracking
-
-```python
-with mlflow.start_run():
-    mlflow.log_params({
-        "learning_rate": lr,
-        "batch_size": batch_size,
-        "model_type": "ChestNetL"
-    })
-    mlflow.log_metrics({
-        "accuracy": accuracy,
-        "auc": auc_score
-    })
 ```
 
 ---
 
-# Security Considerations
+# Validation Strategy
 
-- Data Privacy
-  - HIPAA compliance
-  - Data encryption
-  - Access controls
-
-- Model Security
-  - Input validation
-  - Rate limiting
-  - Audit logging
+- Metrics:
+  - Multi-label accuracy
+  - Precision
+  - F1 Score
+  - ROC curves
+- Cross-validation
+- Error analysis
 
 ---
 
-# Validation & Testing
+# Deployment Readiness
 
-- Unit Tests
-- Integration Tests
-- Clinical Validation
-- Performance Benchmarks
+1. Model Serving
+   - Optimized inference
+   - Version control
+   - Monitoring setup
 
-```python
-def test_model_prediction():
-    assert model.predict(test_image) in [0, 1]
-```
+2. Quality Assurance
+   - Performance thresholds
+   - Safety checks
+   - Continuous validation
 
 ---
 
 # Future Improvements
 
-1. Model Optimization
-   - Quantization
-   - Pruning
-   - Distillation
-
-2. Feature Expansion
-   - Multi-class support
+1. Architecture Enhancements
+   - Attention mechanisms
    - Ensemble methods
-   - Active learning
+   - Advanced augmentation
+
+2. Clinical Integration
+   - Workflow optimization
+   - Reporting integration
+   - Feedback loops
 
 ---
 
-# Questions?
+# Thank You
 
-GitHub: [github.com/project](https://github.com/project)
+## Questions?
 
----
-
-You'll need to:
-
-1. Add actual images:
-   - architecture_diagram.png
-   - training_metrics.png
-   - roc_curve.png
-   - gradcam_example.png
-   - shap_values.png
-   - monitoring_dashboard.png
-
-2. Customize:
-   - Colors
-   - Fonts
-   - Layout
-   - Company branding
-
+Contact: piotr.gryko@gmail.com

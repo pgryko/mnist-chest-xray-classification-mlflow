@@ -36,8 +36,3 @@ class PathConfig:
 
     def __post_init__(self):
         os.makedirs(self.dataset_root, exist_ok=True)
-
-
-# Example: how to instantiate them in code
-# config = TrainingConfig()
-# paths = PathConfig()
