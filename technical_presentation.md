@@ -151,6 +151,28 @@ class ChestNetS(ChestNetBase):
 ```
 
 ---
+# CNN Metrics
+
+![height:400px](images/auc_by_condition_cnn.png)
+
+---
+
+![height:600px](images/class_metrics_cnn.png)
+
+---
+
+![height:600px](images/confusion_matrix_infiltration_cnn.png)
+
+---
+
+![height:600px](images/confusion_matrix_effusion_cnn.png)
+
+---
+
+
+![height:600px](images/confusion_matrix_cardiomegaly_cnn.png)
+
+---
 
 # Resnet Architecture
 
@@ -206,44 +228,72 @@ class ChestNetResnet(ChestNetBase):
 ```
 
 ---
+# Resnet Metrics
 
-# Validation Strategy
-
-- Metrics:
-  - Multi-label accuracy
-  - Precision
-  - F1 Score
-  - ROC curves
-- Cross-validation
-- Error analysis
+![height:400px](images/auc_by_condition_resnet.png)
 
 ---
 
-# Deployment Readiness
-
-1. Model Serving
-   - Optimized inference
-   - Version control
-   - Monitoring setup
-
-2. Quality Assurance
-   - Performance thresholds
-   - Safety checks
-   - Continuous validation
+![height:600px](images/class_metrics_resnet.png)
 
 ---
 
-# Future Improvements
+![height:600px](images/confusion_matrix_infiltration_resnet.png)
 
-1. Architecture Enhancements
-   - Attention mechanisms
-   - Ensemble methods
-   - Advanced augmentation
+---
 
-2. Clinical Integration
-   - Workflow optimization
-   - Reporting integration
-   - Feedback loops
+![height:600px](images/confusion_matrix_effusion_resnet.png)
+
+---
+
+
+![height:600px](images/confusion_matrix_cardiomegaly_resnet.png)
+
+---
+
+# Hypothesis
+
+- I think my early stopping might be flawed, Resnet early stopped at 40 epochs, while CNN at 125 epochs
+- Class imbalance affecting the model performance
+- I had to write statistics by hand, so I might have made a mistake
+- 64x64 resolution might be too low for the model to learn the features (can a human learn from 64x64 images?)
+- I didn't have time to implement hyperparameter optimization
+- Grad-CAM Visualizations and other explainable AI techniques would be beneficial
+
+---
+
+# Experiment Tracking
+
+![height:600px](images/mflow1.png)
+
+---
+
+
+![height:600px](images/mlflow2.png)
+
+---
+
+![height:600px](images/mlflow3.png)
+
+---
+
+![height:600px](images/mlflow4.png)
+
+---
+
+![height:600px](images/mlflow5.png)
+
+---
+
+![height:600px](images/mlflow6.png)
+
+---
+
+![height:600px](images/mlflow7.png)
+
+---
+
+![height:600px](images/mlflow8.png)
 
 ---
 
