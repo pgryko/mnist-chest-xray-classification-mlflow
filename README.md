@@ -95,18 +95,19 @@ test_dataset = ChestMNIST(split='test', download=True)
 ### Transfer Learning
 - Fine-tuning options for popular architectures:
   - ResNet
-  - DenseNet
-  - EfficientNet
 
-### Model Interpretability
-- Grad-CAM visualization
-- SHAP values
-- LIME explanations
-- Integrated Gradients
+[//]: # (### Model Interpretability)
+
+[//]: # (- Grad-CAM visualization)
+
+[//]: # (- SHAP values)
+
+[//]: # (- LIME explanations)
+
+[//]: # (- Integrated Gradients)
 
 ### Experiment Tracking
 - MLflow integration for experiment monitoring
-- Hyperparameter optimization
 - Performance metrics tracking
 - Resource utilization monitoring
 
@@ -116,90 +117,11 @@ test_dataset = ChestMNIST(split='test', download=True)
 - Confusion Matrix
 - Classification Report
 
-## 🔬 Model Training
-
-### Custom CNN Training
-```python
-from src.training import Trainer
-from src.models import ChestNetL
-
-# Initialize model and trainer
-model = ChestNetL()
-trainer = Trainer(
-    model=model,
-    train_loader=train_loader,
-    val_loader=val_loader,
-    config=training_config
-)
-
-# Start training
-trainer.train()
-```
-
-### Transfer Learning
-```python
-from src.models import PretrainedModel
-
-# Initialize pretrained model
-model = PretrainedModel(
-    architecture='resnet50',
-    pretrained=True,
-    num_classes=1
-)
-
-# Fine-tune
-trainer = Trainer(model=model, ...)
-trainer.train()
-```
-
-## 📈 Visualization
-
-```python
-from src.utils.visualization import VisualizationManager
-
-vis_manager = VisualizationManager(model, dataset)
-vis_manager.plot_training_history(history)
-vis_manager.plot_feature_maps(sample_image)
-```
-
-## 🔍 Model Interpretation
-
-```python
-from src.interpretability import ModelInterpreter
-
-interpreter = ModelInterpreter(model)
-interpretation = interpreter.explain(sample_image)
-```
-
-## 🚀 Deployment
-
 ### MLflow Tracking
 ```bash
 mlflow server --host 127.0.0.1 --port 5000
 ```
 
-### FastAPI Service
-```bash
-# Start the API server
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000
-```
-
-### Docker Deployment
-```bash
-# Build Docker image
-docker build -t chest-xray-classifier .
-
-# Run container
-docker run -p 8000:8000 chest-xray-classifier
-```
-
-## 📝 Documentation
-
-### Model Architecture
-Detailed documentation about model architectures, training procedures, and hyperparameter configurations can be found in `docs/`.
-
-### API Documentation
-API endpoints are documented using OpenAPI (Swagger) and can be accessed at `http://localhost:8000/docs` when running the service.
 
 ## 🧪 Testing
 ```bash
@@ -229,9 +151,6 @@ marp --pdf presentation.md
 marp --pptx presentation.md
 ```
 
-
-## 🤝 Contributing
-Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
 
 ## 📄 License
 This project is licensed under the MIT License - see the LICENSE file for details.
