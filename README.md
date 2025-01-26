@@ -146,9 +146,9 @@ npm install -g @marp-team/marp-cli
 
 2. Convert to PDF/PPTX:
 ```bash
-marp --pdf presentation.md
+marp --pdf presentation.md  --allow-local-files 
 # or
-marp --pptx presentation.md
+marp --pptx presentation.md  --allow-local-files 
 ```
 
 

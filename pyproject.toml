@@ -23,6 +23,9 @@ pynvml = "^12.0.0"
 ipython = "^8.31.0"
 lightning = "^2.5.0.post0"
 torchviz = "^0.0.3"
+captum = "^0.7.0"
+shap = "^0.46.0"
+opencv-python = "^4.11.0.86"
 
 
 [tool.poetry.group.dev.dependencies]

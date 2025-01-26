@@ -1,9 +1,10 @@
-from typing import Tuple, Any
+from typing import Tuple, Any, Union, Dict
 
 import mlflow
 from mlflow import MlflowException
 from torchviz import make_dot
 
+import numpy as np
 import pytorch_lightning as pl
 import structlog
 import torch
@@ -19,6 +20,7 @@ from torchmetrics.classification import (
 from torchmetrics import MetricCollection
 
 from src.configs.config import TrainingConfig
+from src.interpretability.explainers import XAIExplainer
 
 logger = structlog.get_logger()
 
@@ -67,7 +69,7 @@ def _infer_input_size(model: nn.Module) -> tuple:
     # if not hasattr(model, "features"):
     #     raise ValueError(
     #         "Model must have a 'features' attribute containing the convolutional layers"
-    #     )
+    #     )np
     #
     # out_channels, out_height, out_width = _calculate_output_shape(
     #     model.features, in_channels
@@ -186,6 +188,7 @@ class ChestNetBase(pl.LightningModule):
         pos_weight: torch.Tensor = None,
     ):
         super().__init__()
+        self.xai_explainer = None
         self.save_hyperparameters()
 
         if pos_weight is not None:
@@ -302,6 +305,71 @@ class ChestNetBase(pl.LightningModule):
             on_epoch=True,
         )
         return {"logits": y_hat, "labels": y}
+
+    def setup_interpretability(self):
+        """Initialize the XAI explainer after the model is moved to the correct device."""
+        if self.xai_explainer is None:
+            self.xai_explainer = XAIExplainer(self, self.device)
+
+    def explain_prediction(
+        self, x: torch.Tensor, target_class: int, method: str = "gradcam"
+    ) -> Union[np.ndarray, torch.Tensor]:
+        """
+        Generate explanation for a prediction.
+
+        Args:
+            x: Input tensor
+            target_class: Target class to explain
+            method: One of ["gradcam", "integrated_gradients", "deep_shap"]
+
+        Returns:
+            Explanation (format depends on method)
+        """
+        self.setup_interpretability()
+
+        if method == "gradcam":
+            return self.xai_explainer.compute_gradcam(x, target_class)
+        elif method == "integrated_gradients":
+            return self.xai_explainer.compute_integrated_gradients(x, target_class)
+        elif method == "deep_shap":
+            # Need background data for SHAP
+            raise NotImplementedError("Need background data for SHAP explanations")
+        else:
+            raise ValueError(f"Unknown explanation method: {method}")
+
+    def get_activation_maps(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Get activation maps for each layer.
+
+        Args:
+            x: Input tensor
+
+        Returns:
+            Dictionary mapping layer names to activation tensors
+        """
+        activations = {}
+
+        def hook_fn(name):
+            def hook(module, input, output):
+                activations[name] = output.detach()
+
+            return hook
+
+        # Register hooks for each layer we want to visualize
+        handles = []
+        for name, module in self.backbone.named_modules():
+            if isinstance(module, (nn.Conv2d, nn.ReLU)):
+                handles.append(module.register_forward_hook(hook_fn(name)))
+
+        # Forward pass
+        with torch.no_grad():
+            self.forward(x)
+
+        # Remove hooks
+        for handle in handles:
+            handle.remove()
+
+        return activations
 
 
 class ChestNetS(ChestNetBase):

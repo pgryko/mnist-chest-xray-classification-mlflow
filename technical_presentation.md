@@ -15,7 +15,7 @@ paginate: true
 - 14 different pathological conditions
 - Custom CNN and transfer learning approaches
 - MLFlow for full experiment tracking and reproducibility
-- ❌ Didn't have time to implement explainable AI techniques
+- Explainable AI techniques (Grad-CAM, Integrated Gradients)
 - ❌ Didn't have time to implement hyperparameter optimization
 ---
 
@@ -174,6 +174,10 @@ class ChestNetS(ChestNetBase):
 
 ---
 
+![height:600px](images/sample_4_explanations_cnn.png)
+
+---
+
 # Resnet Architecture
 
 ```python
@@ -251,6 +255,10 @@ class ChestNetResnet(ChestNetBase):
 
 ---
 
+![height:600px](images/sample_1_explanations_resnet.png)
+
+---
+
 # Hypothesis
 
 - I think my early stopping might be flawed, Resnet early stopped at 40 epochs, while CNN at 125 epochs
@@ -258,7 +266,6 @@ class ChestNetResnet(ChestNetBase):
 - I had to write statistics by hand, so I might have made a mistake
 - 64x64 resolution might be too low for the model to learn the features (can a human learn from 64x64 images?)
 - I didn't have time to implement hyperparameter optimization
-- Grad-CAM Visualizations and other explainable AI techniques would be beneficial
 
 ---
 
