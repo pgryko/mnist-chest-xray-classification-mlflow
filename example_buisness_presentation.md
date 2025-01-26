@@ -35,15 +35,15 @@ style: |
 # Key Performance Metrics
 
 
-**Accuracy Metrics**
-- Overall Accuracy: xx%
-- Sensitivity: xx%
-- Specificity: xx%
+**Micro Metrics**
+- Precision: 20%
+- Recall: 58%
+- F1-Score: 29.5%
 
 **Operational Metrics**
 - Processing time: <2 seconds/image
 - System uptime: 99.9%
-- Cost per analysis: $X.XX
+- Cost per analysis: $0.02
 
 ---
 
@@ -72,14 +72,7 @@ style: |
 
 # Data Pipeline
 
-```mermaid
-flowchart LR
-    A[Raw Data] -->|Preprocessing| B[Clean Data]
-    B -->|Augmentation| C[Training Data]
-    C -->|Training| D[Model]
-    D -->|Validation| E[Metrics]
-    E -->|Feedback| D
-```
+![height:700px](images/mermaid-diagram-2025-01-26-140527.png)
 
 ---
 
