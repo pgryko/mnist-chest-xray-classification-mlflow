@@ -51,40 +51,6 @@ def _infer_input_size(model: nn.Module) -> tuple:
 
     # Use standard ImageNet input size for ResNet models
     return (1, in_channels, 64, 64)
-    # # Find first conv layer to get input channels
-    # first_layer = next((m for m in model.modules() if isinstance(m, nn.Conv2d)), None)
-    # if not first_layer:
-    #     raise ValueError("Could not find a Conv2d layer in the model")
-    #
-    # in_channels = first_layer.in_channels
-    #
-    # # Find first linear layer to get required flattened input size
-    # first_linear = next((m for m in model.modules() if isinstance(m, nn.Linear)), None)
-    # if not first_linear:
-    #     raise ValueError("Could not find a Linear layer in the model")
-    #
-    # required_features = first_linear.in_features
-    #
-    # # Calculate the feature extractor's output shape
-    # if not hasattr(model, "features"):
-    #     raise ValueError(
-    #         "Model must have a 'features' attribute containing the convolutional layers"
-    #     )np
-    #
-    # out_channels, out_height, out_width = _calculate_output_shape(
-    #     model.features, in_channels
-    # )
-    #
-    # # Verify that the output shape matches the linear layer's input
-    # if out_channels * out_height * out_width != required_features:
-    #     raise ValueError(
-    #         f"Model architecture mismatch: feature output shape "
-    #         f"{out_channels}*{out_height}*{out_width} = {out_channels * out_height * out_width} "
-    #         f"doesn't match linear input features {required_features}"
-    #     )
-    #
-    # # Return the expected input size (batch_size, channels, height, width)
-    # return (1, in_channels, 64, 64)  # Fixed 64x64 input size
 
 
 def log_model_description(
@@ -387,9 +353,6 @@ class ChestNetS(ChestNetBase):
             "final_activation": "logits",  # changed from 'sigmoid'
             "num_classes": 14,
         }
-
-        # Log custom information that autolog might miss
-        # mlflow.log_dict(self.model_details, "model_details.json")
 
         self.features = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),

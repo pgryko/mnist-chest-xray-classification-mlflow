@@ -309,3 +309,5 @@ class ChestNetResnet(ChestNetBase):
 ## Questions?
 
 Contact: piotr.gryko@gmail.com
+
+Repo: https://github.com/pgryko/mnist-chest-xray-classification-mlflow
